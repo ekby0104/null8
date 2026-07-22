@@ -5,6 +5,7 @@ import { startCamera, type Camera } from './camera.ts';
 import { Transport } from './transport.ts';
 import { buildUI, type UI } from './ui.ts';
 import { effects, type Effect, type FrameData } from './effects/index.ts';
+import { createGlContext, type GlContext } from './gl/context.ts';
 
 const SAMPLE_W = 128; // CPU 이펙트 샘플 해상도 고정 (SPEC §7)
 const DPR_MAX = 2; // devicePixelRatio 상한 (SPEC §7)
@@ -13,6 +14,7 @@ const TEMPOS = [90, 100, 110, 120, 128, 140];
 let ui: UI;
 let cam: Camera | null = null;
 let ctx: CanvasRenderingContext2D;
+let glCtx: GlContext | null = null; // WebGL2 미지원이면 null → CPU 폴백
 let starting = false;
 
 // 저해상도 샘플 캔버스 — getImageData는 프레임당 1회 (SPEC §7)
@@ -22,15 +24,28 @@ const sampleCtx = sampleCanvas.getContext('2d', { willReadFrequently: true })!;
 const transport = new Transport();
 let activeIndex = 0;
 
+// GL 이펙트 프레임용 더미 샘플 (CPU readback 생략)
+const emptySample = new ImageData(2, 2);
+
 function activeEffect(): Effect {
   return effects[activeIndex];
 }
 
+function effectMode(fx: Effect): '2d' | 'gl' {
+  return fx.usesGl && glCtx ? 'gl' : '2d';
+}
+
 function selectEffect(index: number): void {
-  if (index === activeIndex && ctx) return;
+  const next = ((index % effects.length) + effects.length) % effects.length;
+  if (next === activeIndex) {
+    // 활성 탭 재탭 = 이펙트 변형 토글 (예: BLUEPRINT 반전)
+    activeEffect().onReselect?.();
+    return;
+  }
   activeEffect().dispose();
-  activeIndex = ((index % effects.length) + effects.length) % effects.length;
-  activeEffect().init(null, ctx);
+  activeIndex = next;
+  activeEffect().init(glCtx?.gl ?? null, ctx);
+  ui.setCanvasMode(effectMode(activeEffect()));
   ui.setActiveEffect(activeEffect().id);
 }
 
@@ -47,10 +62,12 @@ function resizeCanvas(): void {
   const cssH = Math.round(vh * scale);
 
   const dpr = Math.min(DPR_MAX, window.devicePixelRatio || 1);
-  ui.canvas.style.width = `${cssW}px`;
-  ui.canvas.style.height = `${cssH}px`;
-  ui.canvas.width = Math.round(cssW * dpr);
-  ui.canvas.height = Math.round(cssH * dpr);
+  for (const canvas of [ui.canvas2d, ui.canvasGl]) {
+    canvas.style.width = `${cssW}px`;
+    canvas.style.height = `${cssH}px`;
+    canvas.width = Math.round(cssW * dpr);
+    canvas.height = Math.round(cssH * dpr);
+  }
 
   sampleCanvas.width = SAMPLE_W;
   sampleCanvas.height = Math.max(2, Math.round((SAMPLE_W * vh) / vw));
@@ -73,9 +90,12 @@ function loop(nowMs: number): void {
   const s = transport.tick(nowMs);
 
   if (s.playing && cam && cam.video.readyState >= 2) {
+    const useGl = effectMode(activeEffect()) === 'gl';
+    if (useGl) glCtx!.uploadVideo(cam.video);
     const frame: FrameData = {
-      videoTex: null, // M2에서 WebGL 텍스처 업로드
-      sample: captureSample(),
+      videoTex: useGl ? glCtx!.videoTex : null,
+      // GL 이펙트 프레임에는 CPU 샘플 readback을 생략 (SPEC §7)
+      sample: useGl ? emptySample : captureSample(),
       video: cam.video,
       mirror: cam.mirror,
       time: s.time,
@@ -90,7 +110,7 @@ function loop(nowMs: number): void {
 }
 
 function snapshot(): void {
-  ui.canvas.toBlob((blob) => {
+  ui.activeCanvas().toBlob((blob) => {
     if (!blob) return;
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
@@ -108,7 +128,8 @@ async function start(): Promise<void> {
     cam = await startCamera('user');
     ui.hideStartOverlay();
     resizeCanvas();
-    activeEffect().init(null, ctx);
+    activeEffect().init(glCtx?.gl ?? null, ctx);
+    ui.setCanvasMode(effectMode(activeEffect()));
     ui.setActiveEffect(activeEffect().id);
     requestAnimationFrame(loop);
   } catch (err) {
@@ -132,7 +153,8 @@ function bootstrap(): void {
     },
   });
 
-  ctx = ui.canvas.getContext('2d')!;
+  ctx = ui.canvas2d.getContext('2d')!;
+  glCtx = createGlContext(ui.canvasGl);
   ui.setActiveEffect(activeEffect().id);
 
   new ResizeObserver(() => resizeCanvas()).observe(ui.stage);

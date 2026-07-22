@@ -9,9 +9,9 @@ Vite + TypeScript, Canvas 2D (M1) → WebGL2 (M2+).
 |---|---|
 | RAW / FRAME | 웹캠 미러 출력 + 흰색 프레임 오버레이 |
 | QUADTREE MOSAIC | luma 분산 기반 재귀 4분할 모자이크, 초록 패치 오마주 |
-| SKETCH | Sobel 엣지 → 반전 → 종이 톤 |
+| SKETCH | Sobel 엣지 → 반전 → 종이 톤 — **GLSL 풀해상도** (미지원 시 CPU 폴백) |
 | POINT CLOUD | luma 기반 점 크기/알파, sin 파동, 시안-블루 팔레트, 잔상 트레일 |
-| BLUEPRINT | 4×4 Bayer 디더링 듀오톤 (청사진 파랑/흰) |
+| BLUEPRINT | 4×4 Bayer 디더링 듀오톤 — **GLSL**, 활성 탭 재탭 = 파랑↔흰 반전 |
 
 ## 조작
 

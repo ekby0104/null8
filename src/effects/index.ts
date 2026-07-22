@@ -30,10 +30,14 @@ export interface Effect {
   id: string;
   /** UI 표시명 (예: "QUADTREE MOSAIC") */
   name: string;
+  /** true면 WebGL 캔버스에 렌더 (WebGL2 미지원 시 CPU 폴백으로 2D 캔버스 사용) */
+  usesGl?: boolean;
   init(gl: GL, ctx2d: CanvasRenderingContext2D): void;
   /** 매 프레임 호출 */
   render(frame: FrameData): void;
   dispose(): void;
+  /** 이미 활성인 탭을 다시 탭했을 때 (변형 토글 등) */
+  onReselect?(): void;
 }
 
 export const effects: Effect[] = [raw, quadtree, sketch, pointcloud, blueprint];

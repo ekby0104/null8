@@ -12,8 +12,15 @@ export interface UIHandlers {
 }
 
 export interface UI {
-  canvas: HTMLCanvasElement;
+  /** Canvas 2D 이펙트용 */
+  canvas2d: HTMLCanvasElement;
+  /** WebGL 이펙트용 — 같은 자리에 겹쳐져 있고 모드에 따라 하나만 보인다 */
+  canvasGl: HTMLCanvasElement;
   stage: HTMLElement;
+  /** 활성 이펙트 종류에 맞는 캔버스를 표시한다 */
+  setCanvasMode(mode: '2d' | 'gl'): void;
+  /** 현재 보이는 캔버스 (스냅샷용) */
+  activeCanvas(): HTMLCanvasElement;
   hideStartOverlay(): void;
   showStartError(msg: string): void;
   setActiveEffect(id: string): void;
@@ -42,8 +49,12 @@ export function buildUI(root: HTMLElement, effects: Effect[], handlers: UIHandle
 
   // ── 스테이지 ──
   const stage = el('main', 'stage');
-  const canvas = el('canvas');
-  canvas.addEventListener('click', () => handlers.onCanvasTap());
+  const viewport = el('div', 'viewport');
+  const canvas2d = el('canvas');
+  const canvasGl = el('canvas', 'hidden');
+  viewport.append(canvas2d, canvasGl);
+  viewport.addEventListener('click', () => handlers.onCanvasTap());
+  let mode: '2d' | 'gl' = '2d';
 
   const overlay = el('div', 'start-overlay');
   const pulse = el('div', 'pulse');
@@ -52,7 +63,7 @@ export function buildUI(root: HTMLElement, effects: Effect[], handlers: UIHandle
   overlay.append(pulse, big, sub);
   overlay.addEventListener('click', () => handlers.onStart(), { once: false });
 
-  stage.append(canvas, overlay);
+  stage.append(viewport, overlay);
 
   // ── 이펙트 바 ──
   const fxbar = el('nav', 'fxbar');
@@ -103,8 +114,19 @@ export function buildUI(root: HTMLElement, effects: Effect[], handlers: UIHandle
   root.append(titlebar, stage, fxbar, timeline, transport);
 
   return {
-    canvas,
+    canvas2d,
+    canvasGl,
     stage,
+
+    setCanvasMode(next) {
+      mode = next;
+      canvas2d.classList.toggle('hidden', mode !== '2d');
+      canvasGl.classList.toggle('hidden', mode !== 'gl');
+    },
+
+    activeCanvas() {
+      return mode === 'gl' ? canvasGl : canvas2d;
+    },
 
     hideStartOverlay() {
       overlay.classList.add('hidden');
