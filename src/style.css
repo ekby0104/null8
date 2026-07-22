@@ -1,12 +1,12 @@
-/* null8 — TouchDesigner 다크 테마 (SPEC §6 디자인 토큰) */
+/* null8 — TouchDesigner 다크 테마, 흑백(모노크롬) 컨셉 (SPEC §6 디자인 토큰) */
 :root {
-  --bg: #141416;
-  --panel: #232327;
-  --panel2: #2c2c31;
-  --line: #3a3a40;
-  --orange: #e8a33d;
-  --lcd: #e6f0e8;
-  --dim: #8a8a92;
+  --bg: #121212;
+  --panel: #1f1f1f;
+  --panel2: #2a2a2a;
+  --line: #3a3a3a;
+  --accent: #f2f2f2;
+  --lcd: #f2f2f2;
+  --dim: #8a8a8a;
   --font-mono: 'SF Mono', 'Menlo', 'Consolas', 'Roboto Mono', monospace;
 }
 
@@ -63,9 +63,10 @@ body {
   border-radius: 50%;
 }
 
-.traffic .r { background: #ff5f57; }
-.traffic .y { background: #febc2e; }
-.traffic .g { background: #28c840; }
+/* 흑백 컨셉: 신호등도 그레이 스케일 */
+.traffic .r { background: #4a4a4a; }
+.traffic .y { background: #6a6a6a; }
+.traffic .g { background: #8f8f8f; }
 
 .titlebar .path {
   flex: 1;
@@ -92,7 +93,7 @@ body {
   align-items: center;
   justify-content: center;
   background:
-    radial-gradient(ellipse at center, #1a1a1d 0%, var(--bg) 75%);
+    radial-gradient(ellipse at center, #1a1a1a 0%, var(--bg) 75%);
   overflow: hidden;
 }
 
@@ -145,7 +146,7 @@ body {
   width: 9px;
   height: 9px;
   border-radius: 50%;
-  background: var(--orange);
+  background: var(--accent);
   animation: pulse 1.2s ease-in-out infinite;
 }
 
@@ -171,7 +172,7 @@ body {
   left: 0;
   height: 100%;
   width: 0%;
-  background: var(--orange);
+  background: var(--accent);
 }
 
 /* ── 트랜스포트 바 ────────────────────────── */
@@ -230,15 +231,18 @@ body {
   flex: none;
 }
 
-.transport button:active { background: #38383e; }
+.transport button:active { background: #383838; }
 
-.transport button.on { color: var(--orange); border-color: var(--orange); }
+/* 활성 상태 = 색 대신 흰 테두리/반전으로 표현 */
+.transport button.on { color: var(--accent); border-color: var(--accent); }
 
 .transport .rec-btn { color: var(--dim); }
 
 .transport .rec-btn.recording {
-  color: #ff5f57;
-  border-color: #ff5f57;
+  background: var(--accent);
+  color: #000;
+  border-color: var(--accent);
+  animation: recblink 1s steps(2, jump-none) infinite;
 }
 
 .transport .hands-btn.loading {
@@ -246,13 +250,14 @@ body {
 }
 
 .transport .hands-btn.detect {
-  color: #28c840;
-  border-color: #28c840;
+  background: var(--accent);
+  color: #000;
+  border-color: var(--accent);
 }
 
-/* 녹화 중 타임코드 빨강 점멸 */
+/* 녹화 중 타임코드 흰색 점멸 */
 .transport .lcd.rec {
-  color: #ff5f57;
+  color: var(--accent);
   animation: recblink 1s steps(2, jump-none) infinite;
 }
 

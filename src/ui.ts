@@ -79,7 +79,7 @@ export function buildUI(root: HTMLElement, handlers: UIHandlers): UI {
   const frameLcd = el('span', 'lcd small', '0');
   frameGroup.append(el('span', 'label', 'F'), frameLcd);
 
-  const playBtn = el('button', 'on', '⏸');
+  const playBtn = el('button', 'on', '❚❚');
   playBtn.title = 'play / stop';
   playBtn.addEventListener('click', () => handlers.onPlayToggle());
 
@@ -101,7 +101,8 @@ export function buildUI(root: HTMLElement, handlers: UIHandlers): UI {
   tempoLcd.addEventListener('click', () => handlers.onTempoTap());
   tempoGroup.append(el('span', 'label', 'Tempo'), tempoLcd, el('span', 'label', 'BPM'));
 
-  const handsBtn = el('button', 'hands-btn', '✋');
+  // ︎: 텍스트 프레젠테이션 강제 — iOS에서 컬러 이모지로 렌더되는 것 방지
+  const handsBtn = el('button', 'hands-btn', '✋︎');
   handsBtn.title = 'hand tracking';
   handsBtn.addEventListener('click', () => handlers.onHandsToggle());
 
@@ -109,7 +110,7 @@ export function buildUI(root: HTMLElement, handlers: UIHandlers): UI {
   camBtn.title = 'switch camera';
   camBtn.addEventListener('click', () => handlers.onCameraFlip());
 
-  const snapBtn = el('button', undefined, '📷');
+  const snapBtn = el('button', undefined, '◉');
   snapBtn.title = 'snapshot';
   snapBtn.addEventListener('click', () => handlers.onSnapshot());
 
@@ -140,7 +141,7 @@ export function buildUI(root: HTMLElement, handlers: UIHandlers): UI {
     showStartError(msg: string) {
       big.textContent = 'CAMERA ERROR';
       sub.textContent = msg;
-      pulse.style.background = '#ff5f57';
+      pulse.style.animationDuration = '0.4s'; // 에러는 빠른 점멸로 표현 (흑백 컨셉)
     },
 
     setFxLabel(name: string) {
@@ -152,7 +153,7 @@ export function buildUI(root: HTMLElement, handlers: UIHandlers): UI {
       frameLcd.textContent = String(frame).padStart(6, '0');
       fpsLcd.textContent = fps.toFixed(1);
       tempoLcd.textContent = String(bpm);
-      playBtn.textContent = playing ? '⏸' : '▶';
+      playBtn.textContent = playing ? '❚❚' : '►';
       playBtn.classList.toggle('on', playing);
     },
 

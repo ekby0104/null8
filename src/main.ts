@@ -198,10 +198,12 @@ function compositeFrame(f: FxFrame, source: HTMLCanvasElement, isDrawing: boolea
   const rw = (f.rect.x1 - f.rect.x0) * w;
   const rh = (f.rect.y1 - f.rect.y0) * h;
   displayCtx.drawImage(source, rx, ry, rw, rh, rx, ry, rw, rh);
-  // 테두리 — 조정 중이면 오렌지, 고정이면 흰색
-  displayCtx.strokeStyle = isDrawing ? '#e8a33d' : '#ffffff';
+  // 테두리 — 흑백 컨셉: 조정 중이면 흰 점선, 고정이면 흰 실선
+  displayCtx.strokeStyle = '#ffffff';
   displayCtx.lineWidth = Math.max(2, w / 640);
+  if (isDrawing) displayCtx.setLineDash([10, 8]);
   displayCtx.strokeRect(rx, ry, rw, rh);
+  displayCtx.setLineDash([]);
 }
 
 function renderFrames(s: { time: number; frame: number; beat: number }): void {
