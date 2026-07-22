@@ -134,15 +134,16 @@ export const quadtree: Effect = {
 
     buildSAT(f.sample);
 
-    // v0.1: 임계값이 sin(time)으로 출렁임 (beat 연동은 M5에서 전환 예정)
-    const threshold = 380 + 300 * Math.sin(f.time * 0.9);
+    // M5: 임계값이 beat에 동기화되어 출렁임 — 1마디(4비트) 주기로 호흡
+    const threshold = 380 + 300 * Math.sin((f.beat * Math.PI) / 2);
 
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, cw, ch);
     ctx.strokeStyle = '#000';
     ctx.lineWidth = 1;
 
-    subdivide(0, 0, w, h, 0, threshold, cw / w, ch / h, f.time);
+    // 초록 패치도 beat 단위로 자리를 옮긴다
+    subdivide(0, 0, w, h, 0, threshold, cw / w, ch / h, f.beat);
   },
 
   dispose() {

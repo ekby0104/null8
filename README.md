@@ -14,6 +14,7 @@ Vite + TypeScript, Canvas 2D (M1) → WebGL2 (M2+).
 | RISO | 초록/노랑/흰 4단계 포스터라이즈, 그레인 + 판 어긋남 프린지 |
 | POINT CLOUD | 22,000+점 `gl.POINTS`, sin 파동, 시안-블루, 잔상 트레일 — 재탭 = 파동 강도 순환 |
 | BLUEPRINT | 4×4 Bayer 디더링 듀오톤 — 활성 탭 재탭 = 파랑↔흰 반전 |
+| SLIT-SCAN | 60프레임 히스토리, 행마다 다른 과거 프레임 — 시간 왜곡 + beat 물결 |
 
 ## 조작
 

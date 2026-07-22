@@ -12,8 +12,8 @@ TouchDesigner 스타일 실시간 웹캠 비주얼 이펙트 웹앱.
 | 목표 | 웹캠 입력에 실시간 비주얼 이펙트를 적용하고, TouchDesigner UI 감성의 트랜스포트 바로 제어하는 SPA |
 | 타깃 환경 | 데스크톱/모바일 사파리·크롬 (iOS 17+, iPadOS 포함) |
 | 배포 | 정적 호스팅 (Netlify / GitHub Pages / Vercel) — HTTPS 필수 (getUserMedia 제약) |
-| 현재 상태 | M4 완료 + 이펙트 개편 — SKETCH 제거, RELIEF/WAVE/RISO 추가 (7종) |
-| 다음 단계 | slit-scan 추가 + beat 동기화(M5) |
+| 현재 상태 | M5 완료 — 이펙트 8종, SLIT-SCAN + beat 동기화. v1.0 필수 마일스톤 완료 |
+| 다음 단계 | (선택) M6 MediaPipe 손 추적, 실기기 검증(M3/M4 각주) |
 
 ## 2. 기술 스택
 
@@ -47,7 +47,7 @@ null8/
 │       ├── riso.ts/.frag    # 초록/노랑/흰 포스터라이즈
 │       ├── pointcloud.ts/.vert/.frag # gl.POINTS, 정점 셰이더에서 비디오 샘플링
 │       ├── blueprint.ts/.frag # Bayer dither GLSL + 반전 토글 (CPU 폴백)
-│       └── slitscan.frag    # 신규 (§5) — M5
+│       └── slitscan.ts/.frag # 60프레임 히스토리 텍스처 배열 시간 왜곡
 └── public/
 ```
 
@@ -79,12 +79,11 @@ interface FrameData {
 ### 5.1 RAW / FRAME (완료)
 웹캠 미러 출력 + 흰색 프레임 사각형 오버레이.
 
-### 5.2 QUADTREE MOSAIC (완료 → 개선)
+### 5.2 QUADTREE MOSAIC (완료 — beat 연동)
 - 128×N 샘플에서 영역 luma 분산 계산, 분산 > 임계값이면 4분할 재귀 (최대 depth 6, 최소 2px)
 - 리프 노드는 평균색으로 채우고 얇은 검정 테두리
-- 임계값이 `sin(time)`으로 출렁임 → **개선: beat 연동으로 변경 (M5)**
-- 원본 오마주 초록 패치 유지
-- v1.0: 분할 계산은 CPU 유지, 렌더만 개선 (렌더 비용이 지배적이지 않음)
+- 임계값이 **beat에 동기화**되어 1마디(4비트) 주기로 출렁임, 초록 패치도 beat 단위 이동
+- 분할 계산은 CPU 유지 (렌더 비용이 지배적이지 않음)
 
 ### 5.3 RELIEF (신규 — SKETCH 대체)
 - ~~SKETCH (Sobel → 반전 → 종이 톤)~~ 는 결과물이 아쉬워 v0.2에서 제거
@@ -116,9 +115,13 @@ interface FrameData {
   (레퍼런스 IMG_6369)
 - GLSL, WebGL2 미지원 시 128 샘플 CPU 폴백
 
-### 5.8 SLIT-SCAN (신규 — M5)
-- 프레임 히스토리 버퍼 (최근 60프레임 텍스처 배열)에서 행마다 다른 과거 프레임 샘플링
-- 시간 왜곡 효과 — TouchDesigner cache TOP 워크플로우의 웹 재현
+### 5.8 SLIT-SCAN (완료)
+- 480×270×60 `TEXTURE_2D_ARRAY` 링 버퍼(~31MB) — 매 프레임 videoTex를
+  FBO로 현재 레이어에 다운스케일 복사 (CPU 재업로드 없음)
+- 행마다 다른 과거 프레임 샘플링 (위=현재 → 아래=과거) + beat 동기 물결,
+  인접 레이어 보간으로 시간축 부드럽게 — TouchDesigner cache TOP의 웹 재현
+- 이펙트를 떠나면 히스토리 텍스처 해제 (메모리 절약)
+- WebGL2 미지원 시 128 샘플 히스토리 CPU 폴백
 
 ## 6. UI 명세
 
@@ -161,7 +164,7 @@ TouchDesigner 다크 테마를 유지한다. **디자인 토큰:**
 | M2 | WebGL 파이프라인 + sketch/blueprint 셰이더 이식 | 풀해상도에서 60fps (데스크톱) | ✅ |
 | M3 | 포인트 클라우드 WebGL 인스턴싱 | 점 20,000개 이상 30fps (iPad) | ✅* |
 | M4 | 녹화(MediaRecorder) + 카메라 전환 | iOS에서 mp4 저장 확인 | ✅** |
-| M5 | slit-scan 추가, beat 동기화 파라미터 | 5.6 명세 충족 | |
+| M5 | slit-scan 추가, beat 동기화 파라미터 | §5.8 명세 충족 | ✅ |
 | M6 | (선택) MediaPipe 손 추적 — 손 위치로 이펙트 파라미터 제어 | 손 흔들면 파동 강도 변화 | |
 
 \* M3 iPad 30fps는 실기기 미검증 (개발 환경에 GPU 없음). 22,400점 단일

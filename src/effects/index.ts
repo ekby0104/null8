@@ -7,6 +7,7 @@ import { wave } from './wave.ts';
 import { riso } from './riso.ts';
 import { pointcloud } from './pointcloud.ts';
 import { blueprint } from './blueprint.ts';
+import { slitscan } from './slitscan.ts';
 
 /** M1(Canvas 2D)에서는 WebGL 컨텍스트가 없다. M2에서 WebGL2RenderingContext로 채워진다. */
 export type GL = WebGL2RenderingContext | null;
@@ -42,7 +43,16 @@ export interface Effect {
   onReselect?(): void;
 }
 
-export const effects: Effect[] = [raw, quadtree, relief, wave, riso, pointcloud, blueprint];
+export const effects: Effect[] = [
+  raw,
+  quadtree,
+  relief,
+  wave,
+  riso,
+  pointcloud,
+  blueprint,
+  slitscan,
+];
 
 /** r/g/b(0-255) → 지각 luma(0-255) */
 export function luma(r: number, g: number, b: number): number {
