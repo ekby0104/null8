@@ -46,8 +46,11 @@ let activeIndex = -1;
 let cycleOffset = 0; // 캔버스 탭으로 앞당긴 횟수
 const visited = new Set<string>();
 
-// 이펙트 프레임 사각형 (디스플레이 정규화 좌표 0..1) — 기본값은 중앙
+// 이펙트 프레임 사각형 (디스플레이 정규화 좌표 0..1)
+// 최초에는 프레임이 없고, 첫 양손 핀치 제스처로 만들어진다.
+// 손 추적 로드 실패 시에만 기본 중앙 프레임으로 폴백.
 const frameRect = { x0: 0.2, y0: 0.15, x1: 0.8, y1: 0.85 };
+let hasFrame = false;
 let framing = false; // 양손 핀치로 프레임 조정 중
 
 function activeEffect(): Effect | null {
@@ -73,6 +76,16 @@ function updateFrameRect(): void {
   const info = handsInfo();
   framing = info.corners !== null;
   if (!info.corners || !cam) return;
+
+  // 첫 핀치: 프레임 생성 — 손 위치에서 바로 시작 (lerp 점프 방지)
+  if (!hasFrame) {
+    hasFrame = true;
+    const p = info.corners.map((c) => ({ x: cam!.mirror ? 1 - c.x : c.x, y: c.y }));
+    frameRect.x0 = Math.min(p[0].x, p[1].x);
+    frameRect.x1 = Math.max(p[0].x, p[1].x);
+    frameRect.y0 = Math.min(p[0].y, p[1].y);
+    frameRect.y1 = Math.max(p[0].y, p[1].y);
+  }
 
   // 비디오 정규화 좌표 → 디스플레이 좌표 (전면 카메라는 미러)
   const pts = info.corners.map((p) => ({
@@ -130,10 +143,8 @@ function captureSample(): ImageData {
   return sampleCtx.getImageData(0, 0, sw, sh);
 }
 
-function composite(fxSource: HTMLCanvasElement): void {
+function drawBase(): void {
   const { width: w, height: h } = ui.canvas;
-
-  // 1) 원본 웹캠 (미러)
   displayCtx.save();
   if (cam!.mirror) {
     displayCtx.translate(w, 0);
@@ -141,6 +152,13 @@ function composite(fxSource: HTMLCanvasElement): void {
   }
   displayCtx.drawImage(cam!.video, 0, 0, w, h);
   displayCtx.restore();
+}
+
+function composite(fxSource: HTMLCanvasElement): void {
+  const { width: w, height: h } = ui.canvas;
+
+  // 1) 원본 웹캠 (미러)
+  drawBase();
 
   // 2) 프레임 내부만 이펙트 합성
   const rx = frameRect.x0 * w;
@@ -170,21 +188,25 @@ function loop(nowMs: number): void {
   if (idx !== activeIndex) switchEffect(idx);
 
   if (s.playing && camReady) {
-    const fx = activeEffect()!;
-    const useGl = effectUsesGl(fx);
-    if (useGl) glCtx!.uploadVideo(cam!.video);
-    const frame: FrameData = {
-      videoTex: useGl ? glCtx!.videoTex : null,
-      // GL 이펙트 프레임에는 CPU 샘플 readback을 생략 (SPEC §7)
-      sample: useGl ? emptySample : captureSample(),
-      video: cam!.video,
-      mirror: cam!.mirror,
-      time: s.time,
-      frame: s.frame,
-      beat: s.beat,
-    };
-    fx.render(frame);
-    composite(useGl ? glCanvas : fxCanvas);
+    if (hasFrame) {
+      const fx = activeEffect()!;
+      const useGl = effectUsesGl(fx);
+      if (useGl) glCtx!.uploadVideo(cam!.video);
+      const frame: FrameData = {
+        videoTex: useGl ? glCtx!.videoTex : null,
+        // GL 이펙트 프레임에는 CPU 샘플 readback을 생략 (SPEC §7)
+        sample: useGl ? emptySample : captureSample(),
+        video: cam!.video,
+        mirror: cam!.mirror,
+        time: s.time,
+        frame: s.frame,
+        beat: s.beat,
+      };
+      fx.render(frame);
+      composite(useGl ? glCanvas : fxCanvas);
+    } else {
+      drawBase(); // 프레임이 생기기 전에는 원본 영상만
+    }
   }
 
   recorder.captureFrame(ui.canvas);
@@ -259,8 +281,11 @@ async function start(): Promise<void> {
     ui.hideStartOverlay();
     resizeCanvas();
     requestAnimationFrame(loop);
-    // 손 추적 자동 활성화 — 실패해도 앱은 기본 프레임으로 동작
-    void enableHands().catch((err) => console.warn('hand tracking unavailable:', err));
+    // 손 추적 자동 활성화 — 실패 시에만 기본 중앙 프레임으로 폴백
+    void enableHands().catch((err) => {
+      console.warn('hand tracking unavailable:', err);
+      hasFrame = true;
+    });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     ui.showStartError(msg);
