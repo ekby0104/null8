@@ -1,6 +1,5 @@
 // 이펙트 레지스트리 + 핵심 인터페이스 (SPEC §4)
 
-import { raw } from './raw.ts';
 import { quadtree } from './quadtree.ts';
 import { relief } from './relief.ts';
 import { wave } from './wave.ts';
@@ -43,8 +42,8 @@ export interface Effect {
   onReselect?(): void;
 }
 
+// 프레임 내부에서 자동 순환하는 이펙트들 (원본 영상은 프레임 바깥에 항상 표시)
 export const effects: Effect[] = [
-  raw,
   quadtree,
   relief,
   wave,

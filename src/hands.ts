@@ -1,28 +1,32 @@
-// MediaPipe Hands 손 추적 (SPEC M6) — 손 흔들기 에너지로 이펙트 파라미터 제어
-// 무거운 번들(wasm ~10MB + 모델 7.8MB)은 ✋ 버튼으로 켤 때만 동적 로드한다.
-
-import { pointcloudParams } from './effects/pointcloud.ts';
+// MediaPipe 양손 추적 — 엄지+검지 핀치 제스처로 이펙트 프레임 설정 (SPEC M6)
+// 무거운 번들(wasm ~10MB + 모델 7.8MB)은 동적 로드. 카메라 시작 시 자동 활성화.
 
 export type HandsState = 'off' | 'loading' | 'on';
 
 type HandLandmarkerT = import('@mediapipe/tasks-vision').HandLandmarker;
 
-const DEFAULT_WAVE = 1.0;
+/** 비디오 정규화 좌표(0..1, 미러 적용 전)의 핀치 상태 */
+export interface HandsInfo {
+  /** 감지된 손 수 (0-2) */
+  hands: number;
+  /** 핀치 중인 손 수 */
+  pinching: number;
+  /** 양손 핀치 시 두 핀치 지점 — 사각형 대각 모서리 */
+  corners: [{ x: number; y: number }, { x: number; y: number }] | null;
+}
 
 let state: HandsState = 'off';
 let landmarker: HandLandmarkerT | null = null;
 let lastVideoTime = -1;
 let lastDetectMs = 0;
-let prev: { x: number; y: number; t: number } | null = null;
-let energy = 0; // 손 흔들기 에너지 (EMA)
-let detected = false;
+let info: HandsInfo = { hands: 0, pinching: 0, corners: null };
 
 export function handsState(): HandsState {
   return state;
 }
 
-export function handsDetected(): boolean {
-  return detected;
+export function handsInfo(): HandsInfo {
+  return info;
 }
 
 export async function enableHands(): Promise<void> {
@@ -38,7 +42,7 @@ export async function enableHands(): Promise<void> {
         delegate,
       },
       runningMode: 'VIDEO' as const,
-      numHands: 1,
+      numHands: 2,
     });
     try {
       landmarker = await HandLandmarker.createFromOptions(fileset, options('GPU'));
@@ -56,41 +60,38 @@ export function disableHands(): void {
   landmarker?.close();
   landmarker = null;
   state = 'off';
-  detected = false;
-  prev = null;
-  energy = 0;
   lastVideoTime = -1;
   lastDetectMs = 0;
-  pointcloudParams.wave = DEFAULT_WAVE;
+  info = { hands: 0, pinching: 0, corners: null };
 }
 
-/** 렌더 루프에서 매 프레임 호출. 새 비디오 프레임에서만 검출한다. */
+/** 렌더 루프에서 매 프레임 호출. 새 비디오 프레임에서 최대 ~15Hz로 검출한다. */
 export function updateHands(video: HTMLVideoElement, nowMs: number): void {
   if (state !== 'on' || !landmarker) return;
   if (video.currentTime === lastVideoTime) return;
-  // 검출은 최대 ~15Hz — 흔들기 에너지 추적에는 충분하고 저사양 기기를 보호
   if (nowMs - lastDetectMs < 66) return;
   lastVideoTime = video.currentTime;
   lastDetectMs = nowMs;
 
   const result = landmarker.detectForVideo(video, nowMs);
-  const lm = result.landmarks?.[0];
-  detected = !!lm;
+  const pinchPoints: { x: number; y: number }[] = [];
+  const handsCount = result.landmarks?.length ?? 0;
 
-  if (lm) {
-    const p = lm[9]; // 가운뎃손가락 MCP — 손바닥 중심 근처
-    const t = nowMs / 1000;
-    if (prev) {
-      const dt = Math.max(1e-3, t - prev.t);
-      const v = Math.hypot(p.x - prev.x, p.y - prev.y) / dt; // 정규화 좌표/초
-      energy += (Math.min(v, 3) - energy) * 0.15;
+  for (const lm of result.landmarks ?? []) {
+    // 핀치 판정: 엄지 끝(4)-검지 끝(8) 거리를 손 크기(손목 0 ↔ 중지 MCP 9)에 상대화
+    const thumb = lm[4];
+    const index = lm[8];
+    const scale = Math.hypot(lm[0].x - lm[9].x, lm[0].y - lm[9].y);
+    const d = Math.hypot(thumb.x - index.x, thumb.y - index.y);
+    if (d < Math.max(0.025, scale * 0.45)) {
+      pinchPoints.push({ x: (thumb.x + index.x) / 2, y: (thumb.y + index.y) / 2 });
     }
-    prev = { x: p.x, y: p.y, t };
-  } else {
-    prev = null;
-    energy *= 0.92; // 손이 사라지면 서서히 감쇠
   }
 
-  // 손 흔들기 에너지 → 포인트 클라우드 파동 강도 (가만히 = 1.0, 세게 흔들면 ~4.5)
-  pointcloudParams.wave = Math.min(4.5, DEFAULT_WAVE + energy * 2.2);
+  info = {
+    hands: handsCount,
+    pinching: pinchPoints.length,
+    corners:
+      pinchPoints.length >= 2 ? [pinchPoints[0], pinchPoints[1]] : null,
+  };
 }

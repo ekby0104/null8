@@ -1,4 +1,10 @@
 // 부트스트랩, 카메라 초기화, 렌더 루프 (SPEC §3)
+//
+// 렌더 구조 (M6 제스처 프레이밍):
+//   1. 디스플레이 캔버스에 원본 웹캠(미러)을 그린다
+//   2. 활성 이펙트는 오프스크린(2D 또는 WebGL) 캔버스에 풀사이즈로 렌더
+//   3. 프레임 사각형 내부만 이펙트 캔버스에서 잘라 합성 + 흰 테두리
+//   4. 프레임은 양손 엄지+검지 핀치 제스처로 설정, 이펙트는 8비트마다 자동 순환
 
 import './style.css';
 import { startCamera, switchCamera, type Camera } from './camera.ts';
@@ -7,17 +13,23 @@ import { Transport } from './transport.ts';
 import { buildUI, type UI } from './ui.ts';
 import { effects, type Effect, type FrameData } from './effects/index.ts';
 import { createGlContext, type GlContext } from './gl/context.ts';
-import { enableHands, disableHands, updateHands, handsState, handsDetected } from './hands.ts';
+import { enableHands, disableHands, updateHands, handsState, handsInfo } from './hands.ts';
 
 const SAMPLE_W = 128; // CPU 이펙트 샘플 해상도 고정 (SPEC §7)
 const DPR_MAX = 2; // devicePixelRatio 상한 (SPEC §7)
 const TEMPOS = [90, 100, 110, 120, 128, 140];
+const CYCLE_BEATS = 8; // 이펙트 자동 순환 주기 — 2마디
+const MIN_RECT = 0.08; // 프레임 최소 크기 (정규화)
 
 let ui: UI;
 let cam: Camera | null = null;
-let ctx: CanvasRenderingContext2D;
+let displayCtx: CanvasRenderingContext2D;
+let fxCanvas: HTMLCanvasElement; // 2D 이펙트 오프스크린
+let fxCtx: CanvasRenderingContext2D;
+let glCanvas: HTMLCanvasElement; // WebGL 이펙트 오프스크린
 let glCtx: GlContext | null = null; // WebGL2 미지원이면 null → CPU 폴백
 let starting = false;
+let flipping = false;
 
 // 저해상도 샘플 캔버스 — getImageData는 프레임당 1회 (SPEC §7)
 const sampleCanvas = document.createElement('canvas');
@@ -25,32 +37,61 @@ const sampleCtx = sampleCanvas.getContext('2d', { willReadFrequently: true })!;
 
 const transport = new Transport();
 const recorder = new CanvasRecorder();
-let activeIndex = 0;
-let flipping = false;
 
 // GL 이펙트 프레임용 더미 샘플 (CPU readback 생략)
 const emptySample = new ImageData(2, 2);
 
-function activeEffect(): Effect {
-  return effects[activeIndex];
+// 이펙트 자동 순환 상태
+let activeIndex = -1;
+let cycleOffset = 0; // 캔버스 탭으로 앞당긴 횟수
+const visited = new Set<string>();
+
+// 이펙트 프레임 사각형 (디스플레이 정규화 좌표 0..1) — 기본값은 중앙
+const frameRect = { x0: 0.2, y0: 0.15, x1: 0.8, y1: 0.85 };
+let framing = false; // 양손 핀치로 프레임 조정 중
+
+function activeEffect(): Effect | null {
+  return activeIndex >= 0 ? effects[activeIndex] : null;
 }
 
-function effectMode(fx: Effect): '2d' | 'gl' {
-  return fx.usesGl && glCtx ? 'gl' : '2d';
+function effectUsesGl(fx: Effect): boolean {
+  return !!fx.usesGl && !!glCtx;
 }
 
-function selectEffect(index: number): void {
-  const next = ((index % effects.length) + effects.length) % effects.length;
-  if (next === activeIndex) {
-    // 활성 탭 재탭 = 이펙트 변형 토글 (예: BLUEPRINT 반전)
-    activeEffect().onReselect?.();
-    return;
-  }
-  activeEffect().dispose();
+function switchEffect(next: number): void {
+  activeEffect()?.dispose();
   activeIndex = next;
-  activeEffect().init(glCtx?.gl ?? null, ctx);
-  ui.setCanvasMode(effectMode(activeEffect()));
-  ui.setActiveEffect(activeEffect().id);
+  const fx = effects[next];
+  fx.init(glCtx?.gl ?? null, fxCtx);
+  // 재방문 시 변형 토글 (BLUEPRINT 파랑↔흰 반전 등) — 순환에 변화를 준다
+  if (visited.has(fx.id)) fx.onReselect?.();
+  else visited.add(fx.id);
+  ui.setFxLabel(fx.name);
+}
+
+function updateFrameRect(): void {
+  const info = handsInfo();
+  framing = info.corners !== null;
+  if (!info.corners || !cam) return;
+
+  // 비디오 정규화 좌표 → 디스플레이 좌표 (전면 카메라는 미러)
+  const pts = info.corners.map((p) => ({
+    x: cam!.mirror ? 1 - p.x : p.x,
+    y: p.y,
+  }));
+  let x0 = Math.min(pts[0].x, pts[1].x);
+  let x1 = Math.max(pts[0].x, pts[1].x);
+  let y0 = Math.min(pts[0].y, pts[1].y);
+  let y1 = Math.max(pts[0].y, pts[1].y);
+  if (x1 - x0 < MIN_RECT) x1 = x0 + MIN_RECT;
+  if (y1 - y0 < MIN_RECT) y1 = y0 + MIN_RECT;
+
+  // 부드럽게 따라가기 (지터 억제)
+  const k = 0.3;
+  frameRect.x0 += (x0 - frameRect.x0) * k;
+  frameRect.y0 += (y0 - frameRect.y0) * k;
+  frameRect.x1 += (x1 - frameRect.x1) * k;
+  frameRect.y1 += (y1 - frameRect.y1) * k;
 }
 
 function resizeCanvas(): void {
@@ -66,9 +107,9 @@ function resizeCanvas(): void {
   const cssH = Math.round(vh * scale);
 
   const dpr = Math.min(DPR_MAX, window.devicePixelRatio || 1);
-  for (const canvas of [ui.canvas2d, ui.canvasGl]) {
-    canvas.style.width = `${cssW}px`;
-    canvas.style.height = `${cssH}px`;
+  ui.canvas.style.width = `${cssW}px`;
+  ui.canvas.style.height = `${cssH}px`;
+  for (const canvas of [ui.canvas, fxCanvas, glCanvas]) {
     canvas.width = Math.round(cssW * dpr);
     canvas.height = Math.round(cssH * dpr);
   }
@@ -89,32 +130,67 @@ function captureSample(): ImageData {
   return sampleCtx.getImageData(0, 0, sw, sh);
 }
 
+function composite(fxSource: HTMLCanvasElement): void {
+  const { width: w, height: h } = ui.canvas;
+
+  // 1) 원본 웹캠 (미러)
+  displayCtx.save();
+  if (cam!.mirror) {
+    displayCtx.translate(w, 0);
+    displayCtx.scale(-1, 1);
+  }
+  displayCtx.drawImage(cam!.video, 0, 0, w, h);
+  displayCtx.restore();
+
+  // 2) 프레임 내부만 이펙트 합성
+  const rx = frameRect.x0 * w;
+  const ry = frameRect.y0 * h;
+  const rw = (frameRect.x1 - frameRect.x0) * w;
+  const rh = (frameRect.y1 - frameRect.y0) * h;
+  displayCtx.drawImage(fxSource, rx, ry, rw, rh, rx, ry, rw, rh);
+
+  // 3) 프레임 테두리 — 핀치로 조정 중이면 오렌지, 고정 상태면 흰색
+  displayCtx.strokeStyle = framing ? '#e8a33d' : '#ffffff';
+  displayCtx.lineWidth = Math.max(2, w / 640);
+  displayCtx.strokeRect(rx, ry, rw, rh);
+}
+
 function loop(nowMs: number): void {
   requestAnimationFrame(loop);
   const s = transport.tick(nowMs);
 
-  if (cam && cam.video.readyState >= 2) updateHands(cam.video, nowMs);
+  const camReady = cam !== null && cam.video.readyState >= 2;
+  if (camReady) {
+    updateHands(cam!.video, nowMs);
+    updateFrameRect();
+  }
 
-  if (s.playing && cam && cam.video.readyState >= 2) {
-    const useGl = effectMode(activeEffect()) === 'gl';
-    if (useGl) glCtx!.uploadVideo(cam.video);
+  // 이펙트 자동 순환 (beat 기반 — Tempo를 따라간다)
+  const idx = (Math.floor(s.beat / CYCLE_BEATS) + cycleOffset) % effects.length;
+  if (idx !== activeIndex) switchEffect(idx);
+
+  if (s.playing && camReady) {
+    const fx = activeEffect()!;
+    const useGl = effectUsesGl(fx);
+    if (useGl) glCtx!.uploadVideo(cam!.video);
     const frame: FrameData = {
       videoTex: useGl ? glCtx!.videoTex : null,
       // GL 이펙트 프레임에는 CPU 샘플 readback을 생략 (SPEC §7)
       sample: useGl ? emptySample : captureSample(),
-      video: cam.video,
-      mirror: cam.mirror,
+      video: cam!.video,
+      mirror: cam!.mirror,
       time: s.time,
       frame: s.frame,
       beat: s.beat,
     };
-    activeEffect().render(frame);
+    fx.render(frame);
+    composite(useGl ? glCanvas : fxCanvas);
   }
 
-  recorder.captureFrame(ui.activeCanvas());
-  ui.setHands(handsState(), handsDetected());
+  recorder.captureFrame(ui.canvas);
+  ui.setHands(handsState(), handsInfo().hands > 0);
   ui.setTransport(transport.timecode(), s.frame, s.fps, s.bpm, s.playing);
-  ui.setTimelineProgress((s.beat % 4) / 4); // 1마디(4비트) 주기 타임라인
+  ui.setTimelineProgress((s.beat % CYCLE_BEATS) / CYCLE_BEATS); // 순환 주기 타임라인
 }
 
 function download(blob: Blob, filename: string): void {
@@ -128,7 +204,7 @@ function download(blob: Blob, filename: string): void {
 async function toggleRecord(): Promise<void> {
   if (!cam || !CanvasRecorder.supported()) return;
   if (!recorder.recording) {
-    recorder.start(ui.activeCanvas());
+    recorder.start(ui.canvas);
     ui.setRecording(true);
     return;
   }
@@ -169,7 +245,7 @@ async function flipCamera(): Promise<void> {
 }
 
 function snapshot(): void {
-  ui.activeCanvas().toBlob((blob) => {
+  ui.canvas.toBlob((blob) => {
     if (blob) download(blob, `null8_${transport.timecode().replaceAll(':', '')}.png`);
   }, 'image/png');
 }
@@ -182,10 +258,9 @@ async function start(): Promise<void> {
     cam = await startCamera('user');
     ui.hideStartOverlay();
     resizeCanvas();
-    activeEffect().init(glCtx?.gl ?? null, ctx);
-    ui.setCanvasMode(effectMode(activeEffect()));
-    ui.setActiveEffect(activeEffect().id);
     requestAnimationFrame(loop);
+    // 손 추적 자동 활성화 — 실패해도 앱은 기본 프레임으로 동작
+    void enableHands().catch((err) => console.warn('hand tracking unavailable:', err));
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     ui.showStartError(msg);
@@ -195,24 +270,27 @@ async function start(): Promise<void> {
 
 function bootstrap(): void {
   const root = document.getElementById('app')!;
-  ui = buildUI(root, effects, {
+  ui = buildUI(root, {
     onStart: () => void start(),
-    onSelectEffect: (id) => selectEffect(effects.findIndex((fx) => fx.id === id)),
-    onCanvasTap: () => selectEffect(activeIndex + 1),
+    onCanvasTap: () => {
+      cycleOffset++; // 즉시 다음 이펙트
+    },
     onPlayToggle: () => transport.toggle(),
     onSnapshot: snapshot,
-    onRecordToggle: () => void toggleRecord(),
-    onCameraFlip: () => void flipCamera(),
-    onHandsToggle: () => void toggleHands(),
     onTempoTap: () => {
       const i = TEMPOS.indexOf(transport.bpm);
       transport.bpm = TEMPOS[(i + 1) % TEMPOS.length];
     },
+    onRecordToggle: () => void toggleRecord(),
+    onCameraFlip: () => void flipCamera(),
+    onHandsToggle: () => void toggleHands(),
   });
 
-  ctx = ui.canvas2d.getContext('2d')!;
-  glCtx = createGlContext(ui.canvasGl);
-  ui.setActiveEffect(activeEffect().id);
+  displayCtx = ui.canvas.getContext('2d')!;
+  fxCanvas = document.createElement('canvas');
+  fxCtx = fxCanvas.getContext('2d')!;
+  glCanvas = document.createElement('canvas');
+  glCtx = createGlContext(glCanvas);
 
   new ResizeObserver(() => resizeCanvas()).observe(ui.stage);
 }

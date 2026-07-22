@@ -1,11 +1,10 @@
-// 타이틀바 / 이펙트 바 / 트랜스포트 바 DOM (SPEC §3, §6)
-
-import type { Effect } from './effects/index.ts';
+// 타이틀바 / 트랜스포트 바 DOM (SPEC §3, §6)
+// 이펙트 바(탭)는 제거 — 이펙트는 프레임 내부에서 자동 순환하고
+// 현재 이펙트 이름은 트랜스포트의 FX 라벨에 표시된다.
 
 export interface UIHandlers {
   onStart(): void;
-  onSelectEffect(id: string): void;
-  onCanvasTap(): void; // 캔버스 탭 = 다음 이펙트
+  onCanvasTap(): void; // 캔버스 탭 = 즉시 다음 이펙트
   onPlayToggle(): void;
   onSnapshot(): void;
   onTempoTap(): void;
@@ -15,18 +14,12 @@ export interface UIHandlers {
 }
 
 export interface UI {
-  /** Canvas 2D 이펙트용 */
-  canvas2d: HTMLCanvasElement;
-  /** WebGL 이펙트용 — 같은 자리에 겹쳐져 있고 모드에 따라 하나만 보인다 */
-  canvasGl: HTMLCanvasElement;
+  /** 합성 결과가 그려지는 디스플레이 캔버스 (녹화/스냅샷 대상) */
+  canvas: HTMLCanvasElement;
   stage: HTMLElement;
-  /** 활성 이펙트 종류에 맞는 캔버스를 표시한다 */
-  setCanvasMode(mode: '2d' | 'gl'): void;
-  /** 현재 보이는 캔버스 (스냅샷용) */
-  activeCanvas(): HTMLCanvasElement;
   hideStartOverlay(): void;
   showStartError(msg: string): void;
-  setActiveEffect(id: string): void;
+  setFxLabel(name: string): void;
   setTransport(timecode: string, frame: number, fps: number, bpm: number, playing: boolean): void;
   setTimelineProgress(ratio: number): void;
   /** 녹화 상태 표시 — 녹화 중 타임코드 빨강 점멸 (SPEC §6) */
@@ -46,7 +39,7 @@ function el<K extends keyof HTMLElementTagNameMap>(
   return node;
 }
 
-export function buildUI(root: HTMLElement, effects: Effect[], handlers: UIHandlers): UI {
+export function buildUI(root: HTMLElement, handlers: UIHandlers): UI {
   // ── 타이틀바 ──
   const titlebar = el('header', 'titlebar');
   const traffic = el('div', 'traffic');
@@ -57,30 +50,18 @@ export function buildUI(root: HTMLElement, effects: Effect[], handlers: UIHandle
   // ── 스테이지 ──
   const stage = el('main', 'stage');
   const viewport = el('div', 'viewport');
-  const canvas2d = el('canvas');
-  const canvasGl = el('canvas', 'hidden');
-  viewport.append(canvas2d, canvasGl);
+  const canvas = el('canvas');
+  viewport.appendChild(canvas);
   viewport.addEventListener('click', () => handlers.onCanvasTap());
-  let mode: '2d' | 'gl' = '2d';
 
   const overlay = el('div', 'start-overlay');
   const pulse = el('div', 'pulse');
   const big = el('div', 'big', 'TAP TO START');
   const sub = el('div', 'sub', 'webcam access required\nHTTPS or localhost only');
   overlay.append(pulse, big, sub);
-  overlay.addEventListener('click', () => handlers.onStart(), { once: false });
+  overlay.addEventListener('click', () => handlers.onStart());
 
   stage.append(viewport, overlay);
-
-  // ── 이펙트 바 ──
-  const fxbar = el('nav', 'fxbar');
-  const fxButtons = new Map<string, HTMLButtonElement>();
-  for (const fx of effects) {
-    const btn = el('button', undefined, fx.name);
-    btn.addEventListener('click', () => handlers.onSelectEffect(fx.id));
-    fxButtons.set(fx.id, btn);
-    fxbar.appendChild(btn);
-  }
 
   // ── 타임라인 ──
   const timeline = el('div', 'timeline');
@@ -102,6 +83,14 @@ export function buildUI(root: HTMLElement, effects: Effect[], handlers: UIHandle
   playBtn.title = 'play / stop';
   playBtn.addEventListener('click', () => handlers.onPlayToggle());
 
+  const recBtn = el('button', 'rec-btn', '●');
+  recBtn.title = 'record';
+  recBtn.addEventListener('click', () => handlers.onRecordToggle());
+
+  const fxGroup = el('div', 'group');
+  const fxLcd = el('span', 'lcd small', '—');
+  fxGroup.append(el('span', 'label', 'FX'), fxLcd);
+
   const fpsGroup = el('div', 'group');
   const fpsLcd = el('span', 'lcd small', '60.0');
   fpsGroup.append(el('span', 'label', 'FPS'), fpsLcd);
@@ -111,10 +100,6 @@ export function buildUI(root: HTMLElement, effects: Effect[], handlers: UIHandle
   tempoLcd.style.cursor = 'pointer';
   tempoLcd.addEventListener('click', () => handlers.onTempoTap());
   tempoGroup.append(el('span', 'label', 'Tempo'), tempoLcd, el('span', 'label', 'BPM'));
-
-  const recBtn = el('button', 'rec-btn', '●');
-  recBtn.title = 'record';
-  recBtn.addEventListener('click', () => handlers.onRecordToggle());
 
   const handsBtn = el('button', 'hands-btn', '✋');
   handsBtn.title = 'hand tracking';
@@ -133,6 +118,7 @@ export function buildUI(root: HTMLElement, effects: Effect[], handlers: UIHandle
     frameGroup,
     playBtn,
     recBtn,
+    fxGroup,
     el('div', 'push'),
     fpsGroup,
     tempoGroup,
@@ -141,22 +127,11 @@ export function buildUI(root: HTMLElement, effects: Effect[], handlers: UIHandle
     snapBtn,
   );
 
-  root.append(titlebar, stage, fxbar, timeline, transport);
+  root.append(titlebar, stage, timeline, transport);
 
   return {
-    canvas2d,
-    canvasGl,
+    canvas,
     stage,
-
-    setCanvasMode(next) {
-      mode = next;
-      canvas2d.classList.toggle('hidden', mode !== '2d');
-      canvasGl.classList.toggle('hidden', mode !== 'gl');
-    },
-
-    activeCanvas() {
-      return mode === 'gl' ? canvasGl : canvas2d;
-    },
 
     hideStartOverlay() {
       overlay.classList.add('hidden');
@@ -168,10 +143,8 @@ export function buildUI(root: HTMLElement, effects: Effect[], handlers: UIHandle
       pulse.style.background = '#ff5f57';
     },
 
-    setActiveEffect(id: string) {
-      for (const [fxId, btn] of fxButtons) {
-        btn.classList.toggle('active', fxId === id);
-      }
+    setFxLabel(name: string) {
+      fxLcd.textContent = name;
     },
 
     setTransport(timecode, frame, fps, bpm, playing) {
