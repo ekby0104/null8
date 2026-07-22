@@ -23,7 +23,7 @@ export interface UI {
   hideStartOverlay(): void;
   showStartError(msg: string): void;
   setFxLabel(name: string): void;
-  setTransport(timecode: string, frame: number, fps: number, bpm: number, playing: boolean): void;
+  setTransport(frame: number, fps: number, bpm: number, playing: boolean): void;
   /** 녹화 상태 표시 — 버튼 라벨 토글 + 타임코드 점멸 + 경과 시간 칩 표시 */
   setRecording(on: boolean): void;
   /** 녹화 경과 시간 (초) — 녹화 중에만 표시된다 */
@@ -70,10 +70,6 @@ export function buildUI(root: HTMLElement, handlers: UIHandlers): UI {
 
   // ── 트랜스포트 바 ──
   const transport = el('footer', 'transport');
-
-  const tcGroup = el('div', 'group');
-  const tcLcd = el('span', 'lcd', '00:00:00:00');
-  tcGroup.append(el('span', 'label', 'Timecode'), tcLcd, el('span', 'label', '(60fps)'));
 
   const frameGroup = el('div', 'group');
   const frameLcd = el('span', 'lcd small', '0');
@@ -122,7 +118,6 @@ export function buildUI(root: HTMLElement, handlers: UIHandlers): UI {
 
   transport.append(
     fxGroup,
-    tcGroup,
     frameGroup,
     playBtn,
     snapBtn,
@@ -165,8 +160,7 @@ export function buildUI(root: HTMLElement, handlers: UIHandlers): UI {
       fxLcd.textContent = name;
     },
 
-    setTransport(timecode, frame, fps, bpm, playing) {
-      tcLcd.textContent = timecode;
+    setTransport(frame, fps, bpm, playing) {
       frameLcd.textContent = String(frame).padStart(6, '0');
       fpsLcd.textContent = fps.toFixed(1);
       tempoLcd.textContent = String(bpm);
@@ -177,7 +171,7 @@ export function buildUI(root: HTMLElement, handlers: UIHandlers): UI {
     setRecording(on: boolean) {
       recBtn.textContent = on ? 'RECORD STOP' : 'RECORD START';
       recBtn.classList.toggle('recording', on);
-      tcLcd.classList.toggle('rec', on);
+      recTimeLcd.classList.toggle('rec', on); // 녹화 중 경과 시간 점멸
       recTimeGroup.style.display = on ? 'flex' : 'none';
       if (!on) recTimeLcd.textContent = '00:00';
     },

@@ -85,7 +85,7 @@ export function updateHands(video: HTMLVideoElement, nowMs: number): void {
     const index = lm[8];
     const scale = Math.hypot(lm[0].x - lm[9].x, lm[0].y - lm[9].y);
     const d = Math.hypot(thumb.x - index.x, thumb.y - index.y);
-    if (d < Math.max(0.02, scale * 0.32)) {
+    if (d < Math.max(0.025, scale * 0.38)) {
       pinchPoints.push({ x: (thumb.x + index.x) / 2, y: (thumb.y + index.y) / 2 });
     }
   }

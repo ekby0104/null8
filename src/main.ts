@@ -23,7 +23,7 @@ const DPR_MAX = 2; // devicePixelRatio 상한 (SPEC §7)
 const TEMPOS = [90, 100, 110, 120, 128, 140];
 const MIN_RECT = 0.08; // 프레임 최소 크기 (정규화)
 const FINALIZE_MS = 400; // 핀치가 이 시간 이상 끊기면 프레임 고정 (검출 깜빡임 흡수)
-const CONFIRM_MS = 250; // 양손 핀치를 이 시간 이상 유지해야 새 프레임 생성 (오인식 방지)
+const CONFIRM_MS = 150; // 양손 핀치를 이 시간 이상 유지해야 새 프레임 생성 (오인식 방지)
 
 interface Rect {
   x0: number;
@@ -274,7 +274,7 @@ function loop(nowMs: number): void {
   recorder.captureFrame(ui.canvas);
   if (recorder.recording) ui.setRecordTime((nowMs - recStartMs) / 1000);
   ui.setHands(handsState(), handsInfo().hands > 0);
-  ui.setTransport(transport.timecode(), s.frame, s.fps, s.bpm, s.playing);
+  ui.setTransport(s.frame, s.fps, s.bpm, s.playing);
 }
 
 function download(blob: Blob, filename: string): void {
