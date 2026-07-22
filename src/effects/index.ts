@@ -2,7 +2,9 @@
 
 import { raw } from './raw.ts';
 import { quadtree } from './quadtree.ts';
-import { sketch } from './sketch.ts';
+import { relief } from './relief.ts';
+import { wave } from './wave.ts';
+import { riso } from './riso.ts';
 import { pointcloud } from './pointcloud.ts';
 import { blueprint } from './blueprint.ts';
 
@@ -40,7 +42,7 @@ export interface Effect {
   onReselect?(): void;
 }
 
-export const effects: Effect[] = [raw, quadtree, sketch, pointcloud, blueprint];
+export const effects: Effect[] = [raw, quadtree, relief, wave, riso, pointcloud, blueprint];
 
 /** r/g/b(0-255) → 지각 luma(0-255) */
 export function luma(r: number, g: number, b: number): number {

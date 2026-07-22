@@ -9,9 +9,11 @@ Vite + TypeScript, Canvas 2D (M1) → WebGL2 (M2+).
 |---|---|
 | RAW / FRAME | 웹캠 미러 출력 + 흰색 프레임 오버레이 |
 | QUADTREE MOSAIC | luma 분산 기반 재귀 4분할 모자이크, 초록 패치 오마주 |
-| SKETCH | Sobel 엣지 → 반전 → 종이 톤 — **GLSL 풀해상도** (미지원 시 CPU 폴백) |
+| RELIEF | 미색 종이 양각 릴리프, 엣지 황록 색수차 + 그레인 |
+| WAVE | 행 sin 변위 에코 등고선 + 블루 도트 디더 |
+| RISO | 초록/노랑/흰 4단계 포스터라이즈, 그레인 + 판 어긋남 프린지 |
 | POINT CLOUD | 22,000+점 `gl.POINTS`, sin 파동, 시안-블루, 잔상 트레일 — 재탭 = 파동 강도 순환 |
-| BLUEPRINT | 4×4 Bayer 디더링 듀오톤 — **GLSL**, 활성 탭 재탭 = 파랑↔흰 반전 |
+| BLUEPRINT | 4×4 Bayer 디더링 듀오톤 — 활성 탭 재탭 = 파랑↔흰 반전 |
 
 ## 조작
 

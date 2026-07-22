@@ -12,7 +12,7 @@ TouchDesigner 스타일 실시간 웹캠 비주얼 이펙트 웹앱.
 | 목표 | 웹캠 입력에 실시간 비주얼 이펙트를 적용하고, TouchDesigner UI 감성의 트랜스포트 바로 제어하는 SPA |
 | 타깃 환경 | 데스크톱/모바일 사파리·크롬 (iOS 17+, iPadOS 포함) |
 | 배포 | 정적 호스팅 (Netlify / GitHub Pages / Vercel) — HTTPS 필수 (getUserMedia 제약) |
-| 현재 상태 | M4 완료 — MediaRecorder 녹화(mp4/webm) + 카메라 전환 |
+| 현재 상태 | M4 완료 + 이펙트 개편 — SKETCH 제거, RELIEF/WAVE/RISO 추가 (7종) |
 | 다음 단계 | slit-scan 추가 + beat 동기화(M5) |
 
 ## 2. 기술 스택
@@ -42,7 +42,9 @@ null8/
 │       ├── index.ts         # 이펙트 레지스트리 (아래 인터페이스 참조)
 │       ├── raw.ts
 │       ├── quadtree.ts      # CPU 계산 유지 (재귀 분할) + Canvas 2D 오버레이
-│       ├── sketch.ts/.frag  # Sobel GLSL (WebGL2 미지원 시 CPU 폴백)
+│       ├── relief.ts/.frag  # 종이 양각 릴리프 (SKETCH 대체)
+│       ├── wave.ts/.frag    # 행 sin 변위 + 블루 도트 디더
+│       ├── riso.ts/.frag    # 초록/노랑/흰 포스터라이즈
 │       ├── pointcloud.ts/.vert/.frag # gl.POINTS, 정점 셰이더에서 비디오 샘플링
 │       ├── blueprint.ts/.frag # Bayer dither GLSL + 반전 토글 (CPU 폴백)
 │       └── slitscan.frag    # 신규 (§5) — M5
@@ -84,9 +86,11 @@ interface FrameData {
 - 원본 오마주 초록 패치 유지
 - v1.0: 분할 계산은 CPU 유지, 렌더만 개선 (렌더 비용이 지배적이지 않음)
 
-### 5.3 SKETCH (완료 — GLSL 풀해상도)
-- Sobel 엣지 검출 → 반전 → 종이 톤 (250 기준 미색)
-- fragment shader 풀해상도 처리, WebGL2 미지원 시 128 샘플 CPU 폴백
+### 5.3 RELIEF (신규 — SKETCH 대체)
+- ~~SKETCH (Sobel → 반전 → 종이 톤)~~ 는 결과물이 아쉬워 v0.2에서 제거
+- 미색 종이 위 좌상 광원 대각 릴리프(부호 있는 그래디언트), 채널별 강도
+  차이로 엣지에 은은한 황록 색수차 + 옅은 종이 그레인 (레퍼런스 IMG_6360)
+- GLSL 풀해상도, WebGL2 미지원 시 128 샘플 CPU 폴백
 
 ### 5.4 POINT CLOUD (완료 — gl.POINTS)
 - 그리드 200×N (16:9 기준 22,400점 — M1 CPU 대비 ~10배), 정점 셰이더에서
@@ -101,7 +105,18 @@ interface FrameData {
 - 파랑↔흰 반전 토글: **활성 BLUEPRINT 탭을 다시 탭** (원본 1번째 컷은 파란 배경에 흰 얼굴)
 - WebGL2 미지원 시 128 샘플 CPU 폴백
 
-### 5.6 SLIT-SCAN (신규 — M5)
+### 5.6 WAVE (신규)
+- 행 단위 다중 주파수 sin 변위 + 변위를 키워가며 max 누적한 에코 등고선
+  (윤곽이 옆으로 반복되는 잔상), 4단계 블루 팔레트 도트 디더 (레퍼런스 IMG_6365)
+- GLSL, WebGL2 미지원 시 128 샘플 CPU 폴백
+
+### 5.7 RISO (신규)
+- luma 4단계 포스터라이즈 → 짙은 초록/초록/노랑/흰 팔레트, 리소 인쇄풍
+  강한 그레인, 채널 오프셋 차이로 엣지에 핑크/시안 판 어긋남 프린지
+  (레퍼런스 IMG_6369)
+- GLSL, WebGL2 미지원 시 128 샘플 CPU 폴백
+
+### 5.8 SLIT-SCAN (신규 — M5)
 - 프레임 히스토리 버퍼 (최근 60프레임 텍스처 배열)에서 행마다 다른 과거 프레임 샘플링
 - 시간 왜곡 효과 — TouchDesigner cache TOP 워크플로우의 웹 재현
 

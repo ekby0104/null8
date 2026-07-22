@@ -1,16 +1,16 @@
-// SKETCH — Sobel 엣지 검출 → 반전 → 종이 톤 (SPEC §5.3)
-// M2: GLSL 풀해상도 이식 (sketch.frag). WebGL2 미지원 시 128 샘플 CPU 폴백.
+// RISO — 초록/노랑/흰 포스터라이즈 + 그레인 + 엣지 프린지 (레퍼런스 IMG_6369)
+// WebGL2 미지원 시 128 샘플 CPU 폴백.
 
 import type { Effect, FrameData } from './index.ts';
 import { luma } from './index.ts';
 import { compileProgram, drawFullscreen } from '../gl/pipeline.ts';
-import fragSrc from './sketch.frag?raw';
+import fragSrc from './riso.frag?raw';
 
 // ── WebGL 경로 ──────────────────────────────
 let gl: WebGL2RenderingContext | null = null;
 let program: WebGLProgram | null = null;
 let uVideo: WebGLUniformLocation | null = null;
-let uTexel: WebGLUniformLocation | null = null;
+let uTime: WebGLUniformLocation | null = null;
 let uMirror: WebGLUniformLocation | null = null;
 
 function renderGl(f: FrameData): void {
@@ -20,21 +20,27 @@ function renderGl(f: FrameData): void {
   g.activeTexture(g.TEXTURE0);
   g.bindTexture(g.TEXTURE_2D, f.videoTex);
   g.uniform1i(uVideo, 0);
-  g.uniform2f(uTexel, 1 / f.video.videoWidth, 1 / f.video.videoHeight);
+  g.uniform1f(uTime, f.time);
   g.uniform1i(uMirror, f.mirror ? 1 : 0);
   drawFullscreen(g);
 }
 
-// ── CPU 폴백 (M1 구현 유지) ──────────────────
+// ── CPU 폴백 ────────────────────────────────
+// [DEEP, GREEN, YELLOW, WHITE] — riso.frag 팔레트와 동일
+const PALETTE: [number, number, number][] = [
+  [10, 107, 31],
+  [51, 168, 61],
+  [237, 230, 133],
+  [250, 250, 240],
+];
+
 let ctx: CanvasRenderingContext2D;
 let off: HTMLCanvasElement | null = null;
 let offCtx: CanvasRenderingContext2D;
-let lumaBuf: Float32Array = new Float32Array(0);
 let out: ImageData | null = null;
 
 function renderCpu(f: FrameData): void {
   const { width: w, height: h, data } = f.sample;
-
   if (!off) {
     off = document.createElement('canvas');
     offCtx = off.getContext('2d')!;
@@ -42,49 +48,33 @@ function renderCpu(f: FrameData): void {
   if (off.width !== w || off.height !== h) {
     off.width = w;
     off.height = h;
-    lumaBuf = new Float32Array(w * h);
     out = offCtx.createImageData(w, h);
-  }
-
-  for (let i = 0, p = 0; i < w * h; i++, p += 4) {
-    lumaBuf[i] = luma(data[p], data[p + 1], data[p + 2]);
   }
 
   const od = out!.data;
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
-      let mag = 0;
-      if (x > 0 && x < w - 1 && y > 0 && y < h - 1) {
-        const tl = lumaBuf[(y - 1) * w + (x - 1)];
-        const tc = lumaBuf[(y - 1) * w + x];
-        const tr = lumaBuf[(y - 1) * w + (x + 1)];
-        const ml = lumaBuf[y * w + (x - 1)];
-        const mr = lumaBuf[y * w + (x + 1)];
-        const bl = lumaBuf[(y + 1) * w + (x - 1)];
-        const bc = lumaBuf[(y + 1) * w + x];
-        const br = lumaBuf[(y + 1) * w + (x + 1)];
-        const gx = -tl - 2 * ml - bl + tr + 2 * mr + br;
-        const gy = -tl - 2 * tc - tr + bl + 2 * bc + br;
-        mag = Math.min(255, Math.sqrt(gx * gx + gy * gy));
-      }
-      const v = 250 - mag * 0.92;
-      const p = (y * w + x) * 4;
-      od[p] = Math.max(20, v);
-      od[p + 1] = Math.max(18, v - 2);
-      od[p + 2] = Math.max(14, v - 10);
-      od[p + 3] = 255;
+      const i = (y * w + x) * 4;
+      const grain = (Math.random() - 0.5) * 0.16;
+      const l = luma(data[i], data[i + 1], data[i + 2]) / 255 + grain;
+      const c = PALETTE[l < 0.3 ? 0 : l < 0.52 ? 1 : l < 0.72 ? 2 : 3];
+      od[i] = c[0];
+      od[i + 1] = c[1];
+      od[i + 2] = c[2];
+      od[i + 3] = 255;
     }
   }
 
   offCtx.putImageData(out!, 0, 0);
   const { width: cw, height: ch } = ctx.canvas;
-  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingEnabled = false;
   ctx.drawImage(off, 0, 0, cw, ch);
+  ctx.imageSmoothingEnabled = true;
 }
 
-export const sketch: Effect = {
-  id: 'sketch',
-  name: 'SKETCH',
+export const riso: Effect = {
+  id: 'riso',
+  name: 'RISO',
   usesGl: true,
 
   init(glCtx, ctx2d) {
@@ -93,7 +83,7 @@ export const sketch: Effect = {
     if (gl && !program) {
       program = compileProgram(gl, fragSrc);
       uVideo = gl.getUniformLocation(program, 'u_video');
-      uTexel = gl.getUniformLocation(program, 'u_texel');
+      uTime = gl.getUniformLocation(program, 'u_time');
       uMirror = gl.getUniformLocation(program, 'u_mirror');
     }
   },
@@ -104,8 +94,6 @@ export const sketch: Effect = {
   },
 
   dispose() {
-    lumaBuf = new Float32Array(0);
     out = null;
-    // program은 재선택 시 재사용 (컴파일 비용 절약)
   },
 };
