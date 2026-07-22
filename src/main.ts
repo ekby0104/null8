@@ -1,10 +1,13 @@
 // 부트스트랩, 카메라 초기화, 렌더 루프 (SPEC §3)
 //
-// 렌더 구조 (M6 제스처 프레이밍):
+// 렌더 구조 (M6 멀티 프레임 제스처 프레이밍):
 //   1. 디스플레이 캔버스에 원본 웹캠(미러)을 그린다
-//   2. 활성 이펙트는 오프스크린(2D 또는 WebGL) 캔버스에 풀사이즈로 렌더
-//   3. 프레임 사각형 내부만 이펙트 캔버스에서 잘라 합성 + 흰 테두리
-//   4. 프레임은 양손 엄지+검지 핀치 제스처로 설정, 이펙트는 8비트마다 자동 순환
+//   2. 양손 엄지+검지 핀치로 프레임을 만들면 순서상 다음 이펙트가 배정되고,
+//      손을 놓으면 그 프레임은 그 이펙트로 영구 고정된다
+//   3. 프레임들은 누적되어 여러 이펙트가 화면에 공존한다. 단, 새 프레임이
+//      기존 프레임을 완전히 포함하면 그 기존 프레임은 제거된다
+//   4. 각 프레임의 이펙트는 오프스크린(2D/WebGL) 캔버스에 풀사이즈로 렌더 후
+//      해당 사각형만 잘라 합성한다
 
 import './style.css';
 import { startCamera, switchCamera, type Camera } from './camera.ts';
@@ -18,8 +21,20 @@ import { enableHands, disableHands, updateHands, handsState, handsInfo } from '.
 const SAMPLE_W = 128; // CPU 이펙트 샘플 해상도 고정 (SPEC §7)
 const DPR_MAX = 2; // devicePixelRatio 상한 (SPEC §7)
 const TEMPOS = [90, 100, 110, 120, 128, 140];
-const CYCLE_BEATS = 8; // 이펙트 자동 순환 주기 — 2마디
 const MIN_RECT = 0.08; // 프레임 최소 크기 (정규화)
+const FINALIZE_MS = 400; // 핀치가 이 시간 이상 끊기면 프레임 고정 (검출 깜빡임 흡수)
+
+interface Rect {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+}
+
+interface FxFrame {
+  rect: Rect;
+  effect: Effect;
+}
 
 let ui: UI;
 let cam: Camera | null = null;
@@ -41,70 +56,92 @@ const recorder = new CanvasRecorder();
 // GL 이펙트 프레임용 더미 샘플 (CPU readback 생략)
 const emptySample = new ImageData(2, 2);
 
-// 이펙트 자동 순환 상태
-let activeIndex = -1;
-let cycleOffset = 0; // 캔버스 탭으로 앞당긴 횟수
-const visited = new Set<string>();
+// ── 프레임/이펙트 상태 ──────────────────────
+const frames: FxFrame[] = []; // 고정된 프레임들 (생성 순)
+let drawing: FxFrame | null = null; // 핀치로 조정 중인 프레임
+let cursor = 0; // 다음 프레임에 배정될 이펙트 인덱스
+let lastCornersMs = 0;
+const inited = new Set<string>();
 
-// 이펙트 프레임 사각형 (디스플레이 정규화 좌표 0..1)
-// 최초에는 프레임이 없고, 첫 양손 핀치 제스처로 만들어진다.
-// 손 추적 로드 실패 시에만 기본 중앙 프레임으로 폴백.
-const frameRect = { x0: 0.2, y0: 0.15, x1: 0.8, y1: 0.85 };
-let hasFrame = false;
-let framing = false; // 양손 핀치로 프레임 조정 중
-
-function activeEffect(): Effect | null {
-  return activeIndex >= 0 ? effects[activeIndex] : null;
+function nextEffect(): Effect {
+  return effects[cursor % effects.length];
 }
 
-function effectUsesGl(fx: Effect): boolean {
-  return !!fx.usesGl && !!glCtx;
-}
-
-function switchEffect(next: number): void {
-  activeEffect()?.dispose();
-  activeIndex = next;
-  const fx = effects[next];
+function ensureInit(fx: Effect): void {
+  if (inited.has(fx.id)) return;
   fx.init(glCtx?.gl ?? null, fxCtx);
-  // 재방문 시 변형 토글 (BLUEPRINT 파랑↔흰 반전 등) — 순환에 변화를 준다
-  if (visited.has(fx.id)) fx.onReselect?.();
-  else visited.add(fx.id);
-  ui.setFxLabel(fx.name);
+  inited.add(fx.id);
 }
 
-function updateFrameRect(): void {
-  const info = handsInfo();
-  framing = info.corners !== null;
-  if (!info.corners || !cam) return;
-
-  // 첫 핀치: 프레임 생성 — 손 위치에서 바로 시작 (lerp 점프 방지)
-  if (!hasFrame) {
-    hasFrame = true;
-    const p = info.corners.map((c) => ({ x: cam!.mirror ? 1 - c.x : c.x, y: c.y }));
-    frameRect.x0 = Math.min(p[0].x, p[1].x);
-    frameRect.x1 = Math.max(p[0].x, p[1].x);
-    frameRect.y0 = Math.min(p[0].y, p[1].y);
-    frameRect.y1 = Math.max(p[0].y, p[1].y);
+/** 어떤 프레임에도 쓰이지 않는 이펙트는 해제 (SLIT-SCAN 히스토리 등 메모리 반환) */
+function releaseUnused(): void {
+  const used = new Set<string>();
+  for (const f of frames) used.add(f.effect.id);
+  if (drawing) used.add(drawing.effect.id);
+  for (const id of [...inited]) {
+    if (!used.has(id)) {
+      effects.find((fx) => fx.id === id)?.dispose();
+      inited.delete(id);
+    }
   }
+}
 
-  // 비디오 정규화 좌표 → 디스플레이 좌표 (전면 카메라는 미러)
-  const pts = info.corners.map((p) => ({
-    x: cam!.mirror ? 1 - p.x : p.x,
-    y: p.y,
-  }));
+function contains(outer: Rect, inner: Rect): boolean {
+  return (
+    inner.x0 >= outer.x0 && inner.x1 <= outer.x1 && inner.y0 >= outer.y0 && inner.y1 <= outer.y1
+  );
+}
+
+function cornersToRect(corners: { x: number; y: number }[]): Rect {
+  const pts = corners.map((p) => ({ x: cam!.mirror ? 1 - p.x : p.x, y: p.y }));
   let x0 = Math.min(pts[0].x, pts[1].x);
   let x1 = Math.max(pts[0].x, pts[1].x);
   let y0 = Math.min(pts[0].y, pts[1].y);
   let y1 = Math.max(pts[0].y, pts[1].y);
   if (x1 - x0 < MIN_RECT) x1 = x0 + MIN_RECT;
   if (y1 - y0 < MIN_RECT) y1 = y0 + MIN_RECT;
+  return { x0, y0, x1, y1 };
+}
 
-  // 부드럽게 따라가기 (지터 억제)
-  const k = 0.3;
-  frameRect.x0 += (x0 - frameRect.x0) * k;
-  frameRect.y0 += (y0 - frameRect.y0) * k;
-  frameRect.x1 += (x1 - frameRect.x1) * k;
-  frameRect.y1 += (y1 - frameRect.y1) * k;
+function updateFrames(nowMs: number): void {
+  const info = handsInfo();
+
+  if (info.corners && cam) {
+    lastCornersMs = nowMs;
+    const target = cornersToRect(info.corners);
+
+    if (!drawing) {
+      // 새 프레임 시작 — 순서상 다음 이펙트를 배정하고 커서 전진
+      drawing = { rect: target, effect: nextEffect() };
+      cursor++;
+      ensureInit(drawing.effect);
+      ui.setFxLabel(drawing.effect.name);
+    } else {
+      // 부드럽게 따라가기 (지터 억제)
+      const k = 0.3;
+      drawing.rect.x0 += (target.x0 - drawing.rect.x0) * k;
+      drawing.rect.y0 += (target.y0 - drawing.rect.y0) * k;
+      drawing.rect.x1 += (target.x1 - drawing.rect.x1) * k;
+      drawing.rect.y1 += (target.y1 - drawing.rect.y1) * k;
+    }
+    return;
+  }
+
+  // 핀치가 끊긴 지 FINALIZE_MS 이상 — 프레임 고정
+  if (drawing && nowMs - lastCornersMs > FINALIZE_MS) {
+    commitFrame(drawing);
+    drawing = null;
+  }
+}
+
+/** 프레임 고정 — 새 프레임이 완전히 포함하는 기존 프레임은 제거 (덮어쓰기) */
+function commitFrame(f: FxFrame): void {
+  for (let i = frames.length - 1; i >= 0; i--) {
+    if (contains(f.rect, frames[i].rect)) frames.splice(i, 1);
+  }
+  frames.push(f);
+  releaseUnused();
+  ui.setFxLabel(`NEXT ${nextEffect().name}`);
 }
 
 function resizeCanvas(): void {
@@ -154,23 +191,60 @@ function drawBase(): void {
   displayCtx.restore();
 }
 
-function composite(fxSource: HTMLCanvasElement): void {
+function compositeFrame(f: FxFrame, source: HTMLCanvasElement, isDrawing: boolean): void {
   const { width: w, height: h } = ui.canvas;
-
-  // 1) 원본 웹캠 (미러)
-  drawBase();
-
-  // 2) 프레임 내부만 이펙트 합성
-  const rx = frameRect.x0 * w;
-  const ry = frameRect.y0 * h;
-  const rw = (frameRect.x1 - frameRect.x0) * w;
-  const rh = (frameRect.y1 - frameRect.y0) * h;
-  displayCtx.drawImage(fxSource, rx, ry, rw, rh, rx, ry, rw, rh);
-
-  // 3) 프레임 테두리 — 핀치로 조정 중이면 오렌지, 고정 상태면 흰색
-  displayCtx.strokeStyle = framing ? '#e8a33d' : '#ffffff';
+  const rx = f.rect.x0 * w;
+  const ry = f.rect.y0 * h;
+  const rw = (f.rect.x1 - f.rect.x0) * w;
+  const rh = (f.rect.y1 - f.rect.y0) * h;
+  displayCtx.drawImage(source, rx, ry, rw, rh, rx, ry, rw, rh);
+  // 테두리 — 조정 중이면 오렌지, 고정이면 흰색
+  displayCtx.strokeStyle = isDrawing ? '#e8a33d' : '#ffffff';
   displayCtx.lineWidth = Math.max(2, w / 640);
   displayCtx.strokeRect(rx, ry, rw, rh);
+}
+
+function renderFrames(s: { time: number; frame: number; beat: number }): void {
+  drawBase();
+
+  const all: { f: FxFrame; isDrawing: boolean }[] = frames.map((f) => ({ f, isDrawing: false }));
+  if (drawing) all.push({ f: drawing, isDrawing: true });
+  if (all.length === 0) return;
+
+  const anyGl = all.some(({ f }) => f.effect.usesGl && glCtx);
+  const anyCpu = all.some(({ f }) => !(f.effect.usesGl && glCtx));
+  if (anyGl) glCtx!.uploadVideo(cam!.video);
+
+  const frameData: FrameData = {
+    videoTex: anyGl ? glCtx!.videoTex : null,
+    // CPU 이펙트가 하나도 없으면 getImageData readback 생략 (SPEC §7)
+    sample: anyCpu ? captureSample() : emptySample,
+    video: cam!.video,
+    mirror: cam!.mirror,
+    time: s.time,
+    frame: s.frame,
+    beat: s.beat,
+  };
+
+  // 같은 캔버스를 쓰는 직전 이펙트와 같으면 재렌더 생략, 다르면 렌더 후 즉시 합성
+  let lastOn2d: Effect | null = null;
+  let lastOnGl: Effect | null = null;
+  for (const { f, isDrawing } of all) {
+    const useGl = !!f.effect.usesGl && !!glCtx;
+    if (useGl) {
+      if (lastOnGl !== f.effect) {
+        f.effect.render(frameData);
+        lastOnGl = f.effect;
+      }
+      compositeFrame(f, glCanvas, isDrawing);
+    } else {
+      if (lastOn2d !== f.effect) {
+        f.effect.render(frameData);
+        lastOn2d = f.effect;
+      }
+      compositeFrame(f, fxCanvas, isDrawing);
+    }
+  }
 }
 
 function loop(nowMs: number): void {
@@ -180,39 +254,15 @@ function loop(nowMs: number): void {
   const camReady = cam !== null && cam.video.readyState >= 2;
   if (camReady) {
     updateHands(cam!.video, nowMs);
-    updateFrameRect();
+    updateFrames(nowMs);
   }
 
-  // 이펙트 자동 순환 (beat 기반 — Tempo를 따라간다)
-  const idx = (Math.floor(s.beat / CYCLE_BEATS) + cycleOffset) % effects.length;
-  if (idx !== activeIndex) switchEffect(idx);
-
-  if (s.playing && camReady) {
-    if (hasFrame) {
-      const fx = activeEffect()!;
-      const useGl = effectUsesGl(fx);
-      if (useGl) glCtx!.uploadVideo(cam!.video);
-      const frame: FrameData = {
-        videoTex: useGl ? glCtx!.videoTex : null,
-        // GL 이펙트 프레임에는 CPU 샘플 readback을 생략 (SPEC §7)
-        sample: useGl ? emptySample : captureSample(),
-        video: cam!.video,
-        mirror: cam!.mirror,
-        time: s.time,
-        frame: s.frame,
-        beat: s.beat,
-      };
-      fx.render(frame);
-      composite(useGl ? glCanvas : fxCanvas);
-    } else {
-      drawBase(); // 프레임이 생기기 전에는 원본 영상만
-    }
-  }
+  if (s.playing && camReady) renderFrames(s);
 
   recorder.captureFrame(ui.canvas);
   ui.setHands(handsState(), handsInfo().hands > 0);
   ui.setTransport(transport.timecode(), s.frame, s.fps, s.bpm, s.playing);
-  ui.setTimelineProgress((s.beat % CYCLE_BEATS) / CYCLE_BEATS); // 순환 주기 타임라인
+  ui.setTimelineProgress((s.beat % 4) / 4); // 1마디(4비트) 주기 타임라인
 }
 
 function download(blob: Blob, filename: string): void {
@@ -272,6 +322,17 @@ function snapshot(): void {
   }, 'image/png');
 }
 
+/** 캔버스 탭: 프레임이 있으면 마지막 프레임 제거(undo), 없으면 다음 이펙트 예약 변경 */
+function onCanvasTap(): void {
+  if (frames.length > 0) {
+    frames.pop();
+    releaseUnused();
+  } else {
+    cursor++;
+  }
+  ui.setFxLabel(`NEXT ${nextEffect().name}`);
+}
+
 async function start(): Promise<void> {
   // iOS 사파리: getUserMedia/play는 사용자 제스처(탭) 이후에 호출 (SPEC §8)
   if (cam || starting) return;
@@ -281,10 +342,14 @@ async function start(): Promise<void> {
     ui.hideStartOverlay();
     resizeCanvas();
     requestAnimationFrame(loop);
-    // 손 추적 자동 활성화 — 실패 시에만 기본 중앙 프레임으로 폴백
+    // 손 추적 자동 활성화 — 실패 시에만 기본 중앙 프레임 하나로 폴백
     void enableHands().catch((err) => {
       console.warn('hand tracking unavailable:', err);
-      hasFrame = true;
+      const fx = nextEffect();
+      cursor++;
+      ensureInit(fx);
+      frames.push({ rect: { x0: 0.2, y0: 0.15, x1: 0.8, y1: 0.85 }, effect: fx });
+      ui.setFxLabel(fx.name);
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -297,9 +362,7 @@ function bootstrap(): void {
   const root = document.getElementById('app')!;
   ui = buildUI(root, {
     onStart: () => void start(),
-    onCanvasTap: () => {
-      cycleOffset++; // 즉시 다음 이펙트
-    },
+    onCanvasTap,
     onPlayToggle: () => transport.toggle(),
     onSnapshot: snapshot,
     onTempoTap: () => {
@@ -317,7 +380,25 @@ function bootstrap(): void {
   glCanvas = document.createElement('canvas');
   glCtx = createGlContext(glCanvas);
 
+  ui.setFxLabel(`NEXT ${nextEffect().name}`);
   new ResizeObserver(() => resizeCanvas()).observe(ui.stage);
+
+  // 개발/테스트용 디버그 훅 — 제스처 없이 프레임 조작
+  (window as unknown as Record<string, unknown>).__null8 = {
+    addFrame(rect: Rect) {
+      const fx = nextEffect();
+      cursor++;
+      ensureInit(fx);
+      commitFrame({ rect, effect: fx });
+    },
+    clearFrames() {
+      frames.length = 0;
+      releaseUnused();
+    },
+    get frames() {
+      return frames.map((f) => ({ rect: { ...f.rect }, id: f.effect.id }));
+    },
+  };
 }
 
 bootstrap();

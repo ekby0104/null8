@@ -5,7 +5,7 @@
 
 import type { Effect, FrameData } from './index.ts';
 import { luma } from './index.ts';
-import { compileProgram, drawFullscreen } from '../gl/pipeline.ts';
+import { compileProgram, drawFullscreen, createFbo, deleteFbo, type Fbo } from '../gl/pipeline.ts';
 import vertSrc from './pointcloud.vert?raw';
 import fragSrc from './pointcloud.frag?raw';
 
@@ -27,6 +27,14 @@ out vec4 outColor;
 void main() { outColor = vec4(0.0, 0.0, 0.0, u_alpha); }
 `;
 
+const COPY_FRAG = `#version 300 es
+precision highp float;
+uniform sampler2D u_tex;
+in vec2 v_uv;
+out vec4 outColor;
+void main() { outColor = vec4(texture(u_tex, v_uv).rgb, 1.0); }
+`;
+
 let gl: WebGL2RenderingContext | null = null;
 let pointProg: WebGLProgram | null = null;
 let trailProg: WebGLProgram | null = null;
@@ -37,12 +45,24 @@ let uTime: WebGLUniformLocation | null = null;
 let uWave: WebGLUniformLocation | null = null;
 let uMirror: WebGLUniformLocation | null = null;
 let uTrailAlpha: WebGLUniformLocation | null = null;
+let copyProg: WebGLProgram | null = null;
+let uCopyTex: WebGLUniformLocation | null = null;
+let trailFbo: Fbo | null = null; // 전용 트레일 버퍼 — 공유 캔버스와 무관하게 잔상 유지
 let needsClear = true;
 
 function renderGl(f: FrameData): void {
   const g = gl!;
   const w = g.drawingBufferWidth;
   const h = g.drawingBufferHeight;
+
+  if (!trailFbo || trailFbo.width !== w || trailFbo.height !== h) {
+    if (trailFbo) deleteFbo(g, trailFbo);
+    trailFbo = createFbo(g, w, h);
+    needsClear = true;
+  }
+
+  // ── 트레일 FBO에 페이드 + 포인트 누적 ──
+  g.bindFramebuffer(g.FRAMEBUFFER, trailFbo.framebuffer);
   g.viewport(0, 0, w, h);
 
   if (needsClear) {
@@ -73,24 +93,46 @@ function renderGl(f: FrameData): void {
   g.drawArrays(g.POINTS, 0, GRID_W * gridH);
 
   g.disable(g.BLEND);
+  g.bindFramebuffer(g.FRAMEBUFFER, null);
+
+  // ── 트레일 버퍼를 캔버스로 복사 ──
+  g.viewport(0, 0, w, h);
+  g.useProgram(copyProg);
+  g.activeTexture(g.TEXTURE0);
+  g.bindTexture(g.TEXTURE_2D, trailFbo.texture);
+  g.uniform1i(uCopyTex, 0);
+  drawFullscreen(g);
 }
 
 // ── CPU 폴백 (M1 구현 유지) ──────────────────
+// 트레일은 전용 오프스크린 캔버스에 누적 (공유 캔버스를 다른 이펙트가 덮어도 유지)
 const STEP = 2;
 let ctx: CanvasRenderingContext2D;
+let trailCanvas: HTMLCanvasElement | null = null;
+let trailCtx: CanvasRenderingContext2D;
 let first = true;
 
 function renderCpu(f: FrameData): void {
   const { width: cw, height: ch } = ctx.canvas;
   const { width: w, height: h, data } = f.sample;
 
+  if (!trailCanvas) {
+    trailCanvas = document.createElement('canvas');
+    trailCtx = trailCanvas.getContext('2d')!;
+  }
+  if (trailCanvas.width !== cw || trailCanvas.height !== ch) {
+    trailCanvas.width = cw;
+    trailCanvas.height = ch;
+    first = true;
+  }
+
   if (first) {
-    ctx.fillStyle = '#000';
-    ctx.fillRect(0, 0, cw, ch);
+    trailCtx.fillStyle = '#000';
+    trailCtx.fillRect(0, 0, cw, ch);
     first = false;
   } else {
-    ctx.fillStyle = `rgba(0,0,0,${pointcloudParams.trail})`;
-    ctx.fillRect(0, 0, cw, ch);
+    trailCtx.fillStyle = `rgba(0,0,0,${pointcloudParams.trail})`;
+    trailCtx.fillRect(0, 0, cw, ch);
   }
 
   const scaleX = cw / w;
@@ -112,10 +154,12 @@ function renderCpu(f: FrameData): void {
       const b = Math.round(200 + l * 55);
       const size = (0.6 + l * 2.6) * scaleX * 0.5;
 
-      ctx.fillStyle = `rgba(${r},${g},${b},${0.2 + l * 0.8})`;
-      ctx.fillRect(x * scaleX + dx, y * scaleY + dy, size, size);
+      trailCtx.fillStyle = `rgba(${r},${g},${b},${0.2 + l * 0.8})`;
+      trailCtx.fillRect(x * scaleX + dx, y * scaleY + dy, size, size);
     }
   }
+
+  ctx.drawImage(trailCanvas!, 0, 0);
 }
 
 export const pointcloud: Effect = {
@@ -138,6 +182,8 @@ export const pointcloud: Effect = {
       uMirror = gl.getUniformLocation(pointProg, 'u_mirror');
       trailProg = compileProgram(gl, TRAIL_FRAG);
       uTrailAlpha = gl.getUniformLocation(trailProg, 'u_alpha');
+      copyProg = compileProgram(gl, COPY_FRAG);
+      uCopyTex = gl.getUniformLocation(copyProg, 'u_tex');
     }
   },
 
@@ -147,11 +193,14 @@ export const pointcloud: Effect = {
   },
 
   dispose() {
+    if (gl && trailFbo) deleteFbo(gl, trailFbo);
+    trailFbo = null;
+    trailCanvas = null;
     first = true;
     needsClear = true;
   },
 
-  // 활성 탭 재탭 = 파동 강도 프리셋 순환
+  // 파동 강도 프리셋 순환 (현재 UI 미노출 — 파라미터는 pointcloudParams로 제어)
   onReselect() {
     const i = WAVE_PRESETS.indexOf(pointcloudParams.wave);
     pointcloudParams.wave = WAVE_PRESETS[(i + 1) % WAVE_PRESETS.length];
