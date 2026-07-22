@@ -12,8 +12,8 @@ TouchDesigner 스타일 실시간 웹캠 비주얼 이펙트 웹앱.
 | 목표 | 웹캠 입력에 실시간 비주얼 이펙트를 적용하고, TouchDesigner UI 감성의 트랜스포트 바로 제어하는 SPA |
 | 타깃 환경 | 데스크톱/모바일 사파리·크롬 (iOS 17+, iPadOS 포함) |
 | 배포 | 정적 호스팅 (Netlify / GitHub Pages / Vercel) — HTTPS 필수 (getUserMedia 제약) |
-| 현재 상태 | M3 완료 — 포인트 클라우드 gl.POINTS 이식 (22,000+점) |
-| 다음 단계 | 녹화 + 카메라 전환(M4) → slit-scan/beat 동기화(M5) |
+| 현재 상태 | M4 완료 — MediaRecorder 녹화(mp4/webm) + 카메라 전환 |
+| 다음 단계 | slit-scan 추가 + beat 동기화(M5) |
 
 ## 2. 기술 스택
 
@@ -34,7 +34,7 @@ null8/
 │   ├── camera.ts            # getUserMedia 래퍼 (facingMode 전환 포함)
 │   ├── transport.ts         # 타임코드/프레임/FPS/재생 상태 관리
 │   ├── ui.ts                # 타이틀바, 이펙트 바, 트랜스포트 바 DOM
-│   ├── recorder.ts          # MediaRecorder 캔버스 녹화 (webm/mp4) — M4
+│   ├── recorder.ts          # MediaRecorder 캔버스 녹화 (mp4/webm 분기)
 │   ├── gl/
 │   │   ├── context.ts       # WebGL2 컨텍스트, 텍스처 업로드 유틸
 │   │   └── pipeline.ts      # 셰이더 컴파일, fullscreen quad, FBO 체인
@@ -118,8 +118,10 @@ TouchDesigner 다크 테마를 유지한다. **디자인 토큰:**
 - **타이틀바**: mac 신호등 + `/project1/null8 (128,128)` 경로 표시
 - **이펙트 바**: 하단 탭, 활성 탭은 오렌지 언더라인
 - **트랜스포트 바**: `Timecode HH:MM:SS:FF (60fps)` / 프레임 카운터 / 재생·정지 / FPS / Tempo / 📷 스냅샷
-- 신규 (M4): **녹화 버튼** (●) — 녹화 중 타임코드 빨강 점멸
-- 신규 (M4): **카메라 전환 버튼** — facingMode user ↔ environment
+- **녹화 버튼** (●) — 녹화 중 타임코드 빨강 점멸. 별도 합성 캔버스를
+  캡처하므로 녹화 중 2D↔WebGL 이펙트를 전환해도 끊기지 않는다
+- **카메라 전환 버튼** (⇄) — facingMode user ↔ environment, 실패 시 이전
+  카메라로 자동 복귀
 
 ## 7. 성능 요구사항
 
@@ -143,12 +145,16 @@ TouchDesigner 다크 테마를 유지한다. **디자인 토큰:**
 | M1 | Vite+TS 구조화, 이펙트 5종 (Canvas 2D) | 기존과 동일 동작, 타입 에러 0 | ✅ |
 | M2 | WebGL 파이프라인 + sketch/blueprint 셰이더 이식 | 풀해상도에서 60fps (데스크톱) | ✅ |
 | M3 | 포인트 클라우드 WebGL 인스턴싱 | 점 20,000개 이상 30fps (iPad) | ✅* |
-| M4 | 녹화(MediaRecorder) + 카메라 전환 | iOS에서 mp4 저장 확인 | |
+| M4 | 녹화(MediaRecorder) + 카메라 전환 | iOS에서 mp4 저장 확인 | ✅** |
 | M5 | slit-scan 추가, beat 동기화 파라미터 | 5.6 명세 충족 | |
 | M6 | (선택) MediaPipe 손 추적 — 손 위치로 이펙트 파라미터 제어 | 손 흔들면 파동 강도 변화 | |
 
 \* M3 iPad 30fps는 실기기 미검증 (개발 환경에 GPU 없음). 22,400점 단일
 드로우콜 + 정점 텍스처 페치 구조라 모바일 GPU에서 충분할 것으로 예상.
+
+\*\* M4 iOS 실기기 저장은 미검증. 크로미엄 헤드리스에서 mp4
+(avc1) 녹화·다운로드 확인 완료. isTypeSupported 분기가 iOS 사파리에서
+video/mp4를 선택하도록 구현되어 있음 — 실기기(HTTPS) 확인 필요.
 
 ## 10. 개발 커맨드
 

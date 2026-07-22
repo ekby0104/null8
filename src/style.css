@@ -267,4 +267,21 @@ body {
 
 .transport button.on { color: var(--orange); border-color: var(--orange); }
 
+.transport .rec-btn { color: var(--dim); }
+
+.transport .rec-btn.recording {
+  color: #ff5f57;
+  border-color: #ff5f57;
+}
+
+/* 녹화 중 타임코드 빨강 점멸 */
+.transport .lcd.rec {
+  color: #ff5f57;
+  animation: recblink 1s steps(2, jump-none) infinite;
+}
+
+@keyframes recblink {
+  50% { opacity: 0.35; }
+}
+
 .transport .push { flex: 1; min-width: 6px; }

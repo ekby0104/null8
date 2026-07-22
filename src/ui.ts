@@ -9,6 +9,8 @@ export interface UIHandlers {
   onPlayToggle(): void;
   onSnapshot(): void;
   onTempoTap(): void;
+  onRecordToggle(): void;
+  onCameraFlip(): void; // facingMode user ↔ environment
 }
 
 export interface UI {
@@ -26,6 +28,8 @@ export interface UI {
   setActiveEffect(id: string): void;
   setTransport(timecode: string, frame: number, fps: number, bpm: number, playing: boolean): void;
   setTimelineProgress(ratio: number): void;
+  /** 녹화 상태 표시 — 녹화 중 타임코드 빨강 점멸 (SPEC §6) */
+  setRecording(on: boolean): void;
 }
 
 function el<K extends keyof HTMLElementTagNameMap>(
@@ -105,11 +109,29 @@ export function buildUI(root: HTMLElement, effects: Effect[], handlers: UIHandle
   tempoLcd.addEventListener('click', () => handlers.onTempoTap());
   tempoGroup.append(el('span', 'label', 'Tempo'), tempoLcd, el('span', 'label', 'BPM'));
 
+  const recBtn = el('button', 'rec-btn', '●');
+  recBtn.title = 'record';
+  recBtn.addEventListener('click', () => handlers.onRecordToggle());
+
+  const camBtn = el('button', undefined, '⇄');
+  camBtn.title = 'switch camera';
+  camBtn.addEventListener('click', () => handlers.onCameraFlip());
+
   const snapBtn = el('button', undefined, '📷');
   snapBtn.title = 'snapshot';
   snapBtn.addEventListener('click', () => handlers.onSnapshot());
 
-  transport.append(tcGroup, frameGroup, playBtn, el('div', 'push'), fpsGroup, tempoGroup, snapBtn);
+  transport.append(
+    tcGroup,
+    frameGroup,
+    playBtn,
+    recBtn,
+    el('div', 'push'),
+    fpsGroup,
+    tempoGroup,
+    camBtn,
+    snapBtn,
+  );
 
   root.append(titlebar, stage, fxbar, timeline, transport);
 
@@ -155,6 +177,11 @@ export function buildUI(root: HTMLElement, effects: Effect[], handlers: UIHandle
 
     setTimelineProgress(ratio: number) {
       timelineHead.style.width = `${(ratio * 100).toFixed(2)}%`;
+    },
+
+    setRecording(on: boolean) {
+      recBtn.classList.toggle('recording', on);
+      tcLcd.classList.toggle('rec', on);
     },
   };
 }

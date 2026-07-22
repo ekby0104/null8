@@ -1,7 +1,8 @@
 // 부트스트랩, 카메라 초기화, 렌더 루프 (SPEC §3)
 
 import './style.css';
-import { startCamera, type Camera } from './camera.ts';
+import { startCamera, switchCamera, type Camera } from './camera.ts';
+import { CanvasRecorder } from './recorder.ts';
 import { Transport } from './transport.ts';
 import { buildUI, type UI } from './ui.ts';
 import { effects, type Effect, type FrameData } from './effects/index.ts';
@@ -22,7 +23,9 @@ const sampleCanvas = document.createElement('canvas');
 const sampleCtx = sampleCanvas.getContext('2d', { willReadFrequently: true })!;
 
 const transport = new Transport();
+const recorder = new CanvasRecorder();
 let activeIndex = 0;
+let flipping = false;
 
 // GL 이펙트 프레임용 더미 샘플 (CPU readback 생략)
 const emptySample = new ImageData(2, 2);
@@ -105,18 +108,51 @@ function loop(nowMs: number): void {
     activeEffect().render(frame);
   }
 
+  recorder.captureFrame(ui.activeCanvas());
   ui.setTransport(transport.timecode(), s.frame, s.fps, s.bpm, s.playing);
   ui.setTimelineProgress((s.beat % 4) / 4); // 1마디(4비트) 주기 타임라인
 }
 
+function download(blob: Blob, filename: string): void {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+async function toggleRecord(): Promise<void> {
+  if (!cam || !CanvasRecorder.supported()) return;
+  if (!recorder.recording) {
+    recorder.start(ui.activeCanvas());
+    ui.setRecording(true);
+    return;
+  }
+  ui.setRecording(false);
+  const result = await recorder.stop();
+  if (result) {
+    download(result.blob, `null8_${transport.timecode().replaceAll(':', '')}.${result.ext}`);
+  }
+}
+
+async function flipCamera(): Promise<void> {
+  // facingMode user ↔ environment (SPEC §6) — 실패 시 이전 카메라로 복귀
+  if (!cam || flipping) return;
+  flipping = true;
+  const prev = cam.facing;
+  try {
+    cam = await switchCamera(cam);
+  } catch {
+    cam = await startCamera(prev);
+  } finally {
+    flipping = false;
+  }
+  resizeCanvas();
+}
+
 function snapshot(): void {
   ui.activeCanvas().toBlob((blob) => {
-    if (!blob) return;
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `null8_${transport.timecode().replaceAll(':', '')}.png`;
-    a.click();
-    URL.revokeObjectURL(a.href);
+    if (blob) download(blob, `null8_${transport.timecode().replaceAll(':', '')}.png`);
   }, 'image/png');
 }
 
@@ -147,6 +183,8 @@ function bootstrap(): void {
     onCanvasTap: () => selectEffect(activeIndex + 1),
     onPlayToggle: () => transport.toggle(),
     onSnapshot: snapshot,
+    onRecordToggle: () => void toggleRecord(),
+    onCameraFlip: () => void flipCamera(),
     onTempoTap: () => {
       const i = TEMPOS.indexOf(transport.bpm);
       transport.bpm = TEMPOS[(i + 1) % TEMPOS.length];
