@@ -1,0 +1,33 @@
+# null8 — Webcam FX
+
+TouchDesigner 스타일 실시간 웹캠 비주얼 이펙트 웹앱.
+Vite + TypeScript, Canvas 2D (M1) → WebGL2 (M2+).
+
+## 이펙트
+
+| 탭 | 설명 |
+|---|---|
+| RAW / FRAME | 웹캠 미러 출력 + 흰색 프레임 오버레이 |
+| QUADTREE MOSAIC | luma 분산 기반 재귀 4분할 모자이크, 초록 패치 오마주 |
+| SKETCH | Sobel 엣지 → 반전 → 종이 톤 |
+| POINT CLOUD | luma 기반 점 크기/알파, sin 파동, 시안-블루 팔레트, 잔상 트레일 |
+| BLUEPRINT | 4×4 Bayer 디더링 듀오톤 (청사진 파랑/흰) |
+
+## 조작
+
+- **캔버스 탭**: 다음 이펙트로 전환
+- **하단 이펙트 바**: 직접 선택
+- **트랜스포트 바**: 재생/정지, Tempo(BPM) 탭 변경, 📷 스냅샷 저장
+
+## 개발
+
+```bash
+npm i
+npm run dev        # localhost — getUserMedia는 HTTPS 또는 localhost에서만 동작
+npm run typecheck
+npm run build
+```
+
+실기기(모바일) 테스트는 HTTPS가 필요하므로 `vite-plugin-mkcert` 또는 Netlify/Vercel 배포로 확인한다.
+
+전체 명세는 [SPEC.md](./SPEC.md) 참조.
