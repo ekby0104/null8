@@ -87,8 +87,8 @@ export function buildUI(root: HTMLElement, handlers: UIHandlers): UI {
   playBtn.title = 'play / stop';
   playBtn.addEventListener('click', () => handlers.onPlayToggle());
 
-  const recBtn = el('button', 'rec-btn', '●');
-  recBtn.title = 'record';
+  const recBtn = el('button', 'rec-btn', 'VIDEO');
+  recBtn.title = 'record video';
   recBtn.addEventListener('click', () => handlers.onRecordToggle());
 
   const fxGroup = el('div', 'group');
@@ -114,8 +114,8 @@ export function buildUI(root: HTMLElement, handlers: UIHandlers): UI {
   camBtn.title = 'switch camera';
   camBtn.addEventListener('click', () => handlers.onCameraFlip());
 
-  const snapBtn = el('button', undefined, '◉');
-  snapBtn.title = 'snapshot';
+  const snapBtn = el('button', undefined, 'PHOTO CAPTURE');
+  snapBtn.title = 'photo capture';
   snapBtn.addEventListener('click', () => handlers.onSnapshot());
 
   transport.append(

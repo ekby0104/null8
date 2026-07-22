@@ -78,12 +78,14 @@ export function updateHands(video: HTMLVideoElement, nowMs: number): void {
   const handsCount = result.landmarks?.length ?? 0;
 
   for (const lm of result.landmarks ?? []) {
-    // 핀치 판정: 엄지 끝(4)-검지 끝(8) 거리를 손 크기(손목 0 ↔ 중지 MCP 9)에 상대화
+    // 핀치 판정: 엄지 끝(4)-검지 끝(8) 거리를 손 크기(손목 0 ↔ 중지 MCP 9)에 상대화.
+    // 임계값이 후하면 손가락을 살짝 오므린 것도 핀치로 오인식되어
+    // 의도치 않은 프레임(=이펙트 전환)이 생기므로 엄격하게 잡는다.
     const thumb = lm[4];
     const index = lm[8];
     const scale = Math.hypot(lm[0].x - lm[9].x, lm[0].y - lm[9].y);
     const d = Math.hypot(thumb.x - index.x, thumb.y - index.y);
-    if (d < Math.max(0.025, scale * 0.45)) {
+    if (d < Math.max(0.02, scale * 0.32)) {
       pinchPoints.push({ x: (thumb.x + index.x) / 2, y: (thumb.y + index.y) / 2 });
     }
   }

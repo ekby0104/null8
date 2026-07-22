@@ -23,6 +23,7 @@ const DPR_MAX = 2; // devicePixelRatio 상한 (SPEC §7)
 const TEMPOS = [90, 100, 110, 120, 128, 140];
 const MIN_RECT = 0.08; // 프레임 최소 크기 (정규화)
 const FINALIZE_MS = 400; // 핀치가 이 시간 이상 끊기면 프레임 고정 (검출 깜빡임 흡수)
+const CONFIRM_MS = 250; // 양손 핀치를 이 시간 이상 유지해야 새 프레임 생성 (오인식 방지)
 
 interface Rect {
   x0: number;
@@ -61,6 +62,7 @@ const frames: FxFrame[] = []; // 고정된 프레임들 (생성 순)
 let drawing: FxFrame | null = null; // 핀치로 조정 중인 프레임
 let cursor = 0; // 다음 프레임에 배정될 이펙트 인덱스
 let lastCornersMs = 0;
+let cornersSinceMs: number | null = null; // 양손 핀치가 연속으로 유지되기 시작한 시각
 const inited = new Set<string>();
 
 function nextEffect(): Effect {
@@ -111,6 +113,10 @@ function updateFrames(nowMs: number): void {
     const target = cornersToRect(info.corners);
 
     if (!drawing) {
+      // 오인식 방지: 양손 핀치가 CONFIRM_MS 이상 유지될 때만 새 프레임 시작
+      if (cornersSinceMs === null) cornersSinceMs = nowMs;
+      if (nowMs - cornersSinceMs < CONFIRM_MS) return;
+      cornersSinceMs = null;
       // 새 프레임 시작 — 순서상 다음 이펙트를 배정하고 커서 전진
       drawing = { rect: target, effect: nextEffect() };
       cursor++;
@@ -127,7 +133,8 @@ function updateFrames(nowMs: number): void {
     return;
   }
 
-  // 핀치가 끊긴 지 FINALIZE_MS 이상 — 프레임 고정
+  // 핀치가 풀림 — 확정 대기 리셋, 조정 중이던 프레임은 FINALIZE_MS 후 고정
+  cornersSinceMs = null;
   if (drawing && nowMs - lastCornersMs > FINALIZE_MS) {
     commitFrame(drawing);
     drawing = null;
