@@ -12,8 +12,8 @@ TouchDesigner 스타일 실시간 웹캠 비주얼 이펙트 웹앱.
 | 목표 | 웹캠 입력에 실시간 비주얼 이펙트를 적용하고, TouchDesigner UI 감성의 트랜스포트 바로 제어하는 SPA |
 | 타깃 환경 | 데스크톱/모바일 사파리·크롬 (iOS 17+, iPadOS 포함) |
 | 배포 | 정적 호스팅 (Netlify / GitHub Pages / Vercel) — HTTPS 필수 (getUserMedia 제약) |
-| 현재 상태 | M2 완료 — WebGL 파이프라인, SKETCH/BLUEPRINT 풀해상도 셰이더 |
-| 다음 단계 | 포인트 클라우드 인스턴싱(M3) → 녹화 기능(M4) |
+| 현재 상태 | M3 완료 — 포인트 클라우드 gl.POINTS 이식 (22,000+점) |
+| 다음 단계 | 녹화 + 카메라 전환(M4) → slit-scan/beat 동기화(M5) |
 
 ## 2. 기술 스택
 
@@ -43,7 +43,7 @@ null8/
 │       ├── raw.ts
 │       ├── quadtree.ts      # CPU 계산 유지 (재귀 분할) + Canvas 2D 오버레이
 │       ├── sketch.ts/.frag  # Sobel GLSL (WebGL2 미지원 시 CPU 폴백)
-│       ├── pointcloud.ts    # WebGL 포인트 인스턴싱 (gl.POINTS) — M3
+│       ├── pointcloud.ts/.vert/.frag # gl.POINTS, 정점 셰이더에서 비디오 샘플링
 │       ├── blueprint.ts/.frag # Bayer dither GLSL + 반전 토글 (CPU 폴백)
 │       └── slitscan.frag    # 신규 (§5) — M5
 └── public/
@@ -88,11 +88,13 @@ interface FrameData {
 - Sobel 엣지 검출 → 반전 → 종이 톤 (250 기준 미색)
 - fragment shader 풀해상도 처리, WebGL2 미지원 시 128 샘플 CPU 폴백
 
-### 5.4 POINT CLOUD (완료 → WebGL 이식)
-- step 2 그리드 샘플, luma 기반 점 크기/알파, sin 파동 변위, 시안-블루 팔레트
-- 잔상 트레일: 반투명 검정 오버드로우
-- v1.0: `gl.POINTS` 인스턴싱으로 이식 → 점 개수 10배 (원본 영상의 밀도 재현)
-- 추가 파라미터: 파동 강도, 트레일 길이
+### 5.4 POINT CLOUD (완료 — gl.POINTS)
+- 그리드 200×N (16:9 기준 22,400점 — M1 CPU 대비 ~10배), 정점 셰이더에서
+  비디오 텍스처를 직접 샘플링해 luma 기반 점 크기/알파/파동 변위 계산
+- 잔상 트레일: preserveDrawingBuffer 위에 반투명 검정 풀스크린 오버드로우
+- 추가 파라미터: `pointcloudParams.wave` (파동 강도), `.trail` (트레일 길이)
+- 활성 탭 재탭 = 파동 강도 프리셋 순환 (1.0 → 2.0 → 3.5 → 0.4)
+- WebGL2 미지원 시 128 샘플 CPU 폴백
 
 ### 5.5 BLUEPRINT (완료 — GLSL + 반전 토글)
 - 4×4 Bayer ordered dithering + 랜덤 노이즈, 듀오톤 (흰 `#eef4fa` / 청사진 파랑 `#16489e`)
@@ -140,10 +142,13 @@ TouchDesigner 다크 테마를 유지한다. **디자인 토큰:**
 |---|---|---|---|
 | M1 | Vite+TS 구조화, 이펙트 5종 (Canvas 2D) | 기존과 동일 동작, 타입 에러 0 | ✅ |
 | M2 | WebGL 파이프라인 + sketch/blueprint 셰이더 이식 | 풀해상도에서 60fps (데스크톱) | ✅ |
-| M3 | 포인트 클라우드 WebGL 인스턴싱 | 점 20,000개 이상 30fps (iPad) | |
+| M3 | 포인트 클라우드 WebGL 인스턴싱 | 점 20,000개 이상 30fps (iPad) | ✅* |
 | M4 | 녹화(MediaRecorder) + 카메라 전환 | iOS에서 mp4 저장 확인 | |
 | M5 | slit-scan 추가, beat 동기화 파라미터 | 5.6 명세 충족 | |
 | M6 | (선택) MediaPipe 손 추적 — 손 위치로 이펙트 파라미터 제어 | 손 흔들면 파동 강도 변화 | |
+
+\* M3 iPad 30fps는 실기기 미검증 (개발 환경에 GPU 없음). 22,400점 단일
+드로우콜 + 정점 텍스처 페치 구조라 모바일 GPU에서 충분할 것으로 예상.
 
 ## 10. 개발 커맨드
 

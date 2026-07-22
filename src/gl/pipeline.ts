@@ -23,9 +23,16 @@ function compileShader(gl: WebGL2RenderingContext, type: number, src: string): W
   return shader;
 }
 
-/** fullscreen 공용 정점 셰이더 + 주어진 fragment 소스로 프로그램을 링크한다. */
-export function compileProgram(gl: WebGL2RenderingContext, fragSrc: string): WebGLProgram {
-  const vert = compileShader(gl, gl.VERTEX_SHADER, FULLSCREEN_VERT);
+/**
+ * fragment 소스로 프로그램을 링크한다. vertSrc 생략 시 fullscreen 공용
+ * 정점 셰이더를 사용한다 (포인트 클라우드처럼 커스텀 정점이 필요하면 전달).
+ */
+export function compileProgram(
+  gl: WebGL2RenderingContext,
+  fragSrc: string,
+  vertSrc: string = FULLSCREEN_VERT,
+): WebGLProgram {
+  const vert = compileShader(gl, gl.VERTEX_SHADER, vertSrc);
   const frag = compileShader(gl, gl.FRAGMENT_SHADER, fragSrc);
   const program = gl.createProgram()!;
   gl.attachShader(program, vert);
