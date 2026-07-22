@@ -225,8 +225,6 @@ body {
   border-color: var(--accent);
 }
 
-.transport .rec-btn { color: var(--dim); }
-
 .transport .rec-btn.recording {
   background: var(--accent);
   color: #fff;

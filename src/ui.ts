@@ -118,12 +118,12 @@ export function buildUI(root: HTMLElement, handlers: UIHandlers): UI {
 
   transport.append(
     fxGroup,
-    frameGroup,
     playBtn,
     snapBtn,
     recBtn,
     recTimeGroup,
     el('div', 'push'),
+    frameGroup,
     fpsGroup,
     tempoGroup,
     handsBtn,
