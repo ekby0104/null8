@@ -1,12 +1,15 @@
-/* null8 — TouchDesigner 다크 테마, 흑백(모노크롬) 컨셉 (SPEC §6 디자인 토큰) */
+/* null8 — 화이트 톤 모노크롬, TV 유닛 레이아웃 (SPEC §6)
+   흰 배경 중앙에 카메라 뷰 크기의 베젤 유닛(타이틀바+스크린+타임라인+트랜스포트)이 떠 있다. */
 :root {
-  --bg: #121212;
-  --panel: #1f1f1f;
-  --panel2: #2a2a2a;
-  --line: #3a3a3a;
-  --accent: #f2f2f2;
-  --lcd: #f2f2f2;
-  --dim: #8a8a8a;
+  --bg: #f4f4f2;
+  --panel: #ffffff;
+  --panel2: #ececec;
+  --line: #dcdcdc;
+  --accent: #141414;
+  --ink: #222222;
+  --dim: #9a9a9a;
+  --lcd-bg: #141414;
+  --lcd-fg: #f5f5f5;
   --font-mono: 'SF Mono', 'Menlo', 'Consolas', 'Roboto Mono', monospace;
 }
 
@@ -25,7 +28,7 @@ body {
 
 body {
   background: var(--bg);
-  color: var(--lcd);
+  color: var(--ink);
   font-family: var(--font-mono);
   font-size: 12px;
   user-select: none;
@@ -37,7 +40,18 @@ body {
   height: 100%;
   height: 100dvh;
   display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+/* ── TV 유닛 ─────────────────────────────── */
+.device {
+  display: flex;
   flex-direction: column;
+  background: var(--panel);
+  border: 2px solid var(--accent);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.1);
 }
 
 /* ── 타이틀바 ─────────────────────────────── */
@@ -45,7 +59,7 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
-  height: 34px;
+  height: 32px;
   padding: 0 12px;
   background: var(--panel);
   border-bottom: 1px solid var(--line);
@@ -58,15 +72,15 @@ body {
 }
 
 .traffic span {
-  width: 11px;
-  height: 11px;
+  width: 10px;
+  height: 10px;
   border-radius: 50%;
 }
 
 /* 흑백 컨셉: 신호등도 그레이 스케일 */
-.traffic .r { background: #4a4a4a; }
-.traffic .y { background: #6a6a6a; }
-.traffic .g { background: #8f8f8f; }
+.traffic .r { background: #c9c9c9; }
+.traffic .y { background: #ababab; }
+.traffic .g { background: #8a8a8a; }
 
 .titlebar .path {
   flex: 1;
@@ -80,38 +94,24 @@ body {
 }
 
 .titlebar .spacer {
-  width: 47px; /* traffic light 폭만큼 — path 중앙 정렬용 */
+  width: 44px; /* traffic light 폭만큼 — path 중앙 정렬용 */
   flex: none;
 }
 
-/* ── 스테이지 ─────────────────────────────── */
-.stage {
-  flex: 1;
-  min-height: 0;
+/* ── 스크린 (카메라 뷰) ───────────────────── */
+.viewport {
   position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background:
-    radial-gradient(ellipse at center, #1a1a1a 0%, var(--bg) 75%);
-  overflow: hidden;
-}
-
-.stage .viewport {
-  position: relative;
-  cursor: pointer;
-}
-
-.stage canvas {
-  display: block;
-  max-width: 100%;
-  max-height: 100%;
   background: #000;
-  outline: 1px solid var(--line);
+  cursor: pointer;
+  flex: none;
 }
 
-.stage canvas.hidden {
-  display: none;
+.viewport canvas {
+  display: block;
+  background: #000;
+  /* 카메라 시작 전 기본 크기 — JS가 인라인 스타일로 덮어쓴다 */
+  width: min(80vw, 560px);
+  aspect-ratio: 4 / 3;
 }
 
 .start-overlay {
@@ -122,7 +122,7 @@ body {
   align-items: center;
   justify-content: center;
   gap: 14px;
-  background: rgba(20, 20, 22, 0.92);
+  background: rgba(255, 255, 255, 0.94);
   cursor: pointer;
   z-index: 10;
 }
@@ -130,7 +130,7 @@ body {
 .start-overlay .big {
   font-size: 15px;
   letter-spacing: 0.35em;
-  color: var(--lcd);
+  color: var(--ink);
 }
 
 .start-overlay .sub {
@@ -140,6 +140,7 @@ body {
   text-align: center;
   line-height: 1.7;
   padding: 0 24px;
+  white-space: pre-line;
 }
 
 .start-overlay .pulse {
@@ -175,17 +176,18 @@ body {
   background: var(--accent);
 }
 
-/* ── 트랜스포트 바 ────────────────────────── */
+/* ── 트랜스포트 바 (스크린 바로 아래 부착) ── */
 .transport {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 12px calc(8px + env(safe-area-inset-bottom));
+  gap: 8px;
+  padding: 8px 10px;
   background: var(--panel);
   border-top: 1px solid var(--line);
   overflow-x: auto;
   scrollbar-width: none;
   flex: none;
+  min-width: 0;
 }
 
 .transport::-webkit-scrollbar { display: none; }
@@ -206,13 +208,14 @@ body {
 
 .transport .lcd {
   font-size: 13px;
-  color: var(--lcd);
-  background: #101012;
-  border: 1px solid var(--line);
+  color: var(--lcd-fg);
+  background: var(--lcd-bg);
+  border: 1px solid var(--lcd-bg);
   border-radius: 3px;
   padding: 3px 8px;
   letter-spacing: 0.06em;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .transport .lcd.small { font-size: 11px; }
@@ -221,26 +224,30 @@ body {
   appearance: none;
   border: 1px solid var(--line);
   border-radius: 3px;
-  background: var(--panel2);
-  color: var(--lcd);
+  background: #f7f7f7;
+  color: var(--ink);
   font-family: var(--font-mono);
   font-size: 12px;
   line-height: 1;
-  padding: 6px 11px;
+  padding: 6px 10px;
   cursor: pointer;
   flex: none;
 }
 
-.transport button:active { background: #383838; }
+.transport button:active { background: #e4e4e4; }
 
-/* 활성 상태 = 색 대신 흰 테두리/반전으로 표현 */
-.transport button.on { color: var(--accent); border-color: var(--accent); }
+/* 활성 상태 = 반전 (검정 배경 + 흰 글자) */
+.transport button.on {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
 
 .transport .rec-btn { color: var(--dim); }
 
 .transport .rec-btn.recording {
   background: var(--accent);
-  color: #000;
+  color: #fff;
   border-color: var(--accent);
   animation: recblink 1s steps(2, jump-none) infinite;
 }
@@ -251,13 +258,12 @@ body {
 
 .transport .hands-btn.detect {
   background: var(--accent);
-  color: #000;
+  color: #fff;
   border-color: var(--accent);
 }
 
-/* 녹화 중 타임코드 흰색 점멸 */
+/* 녹화 중 타임코드 점멸 */
 .transport .lcd.rec {
-  color: var(--accent);
   animation: recblink 1s steps(2, jump-none) infinite;
 }
 

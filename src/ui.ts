@@ -16,7 +16,10 @@ export interface UIHandlers {
 export interface UI {
   /** 합성 결과가 그려지는 디스플레이 캔버스 (녹화/스냅샷 대상) */
   canvas: HTMLCanvasElement;
-  stage: HTMLElement;
+  /** 캔버스를 제외한 유닛 크롬(타이틀바+타임라인+트랜스포트) 높이 합 */
+  chromeHeight(): number;
+  /** TV 유닛 폭을 캔버스 CSS 폭에 맞춘다 */
+  setDeviceWidth(cssW: number): void;
   hideStartOverlay(): void;
   showStartError(msg: string): void;
   setFxLabel(name: string): void;
@@ -47,8 +50,7 @@ export function buildUI(root: HTMLElement, handlers: UIHandlers): UI {
   const path = el('div', 'path', '/project1/null8 (128,128)');
   titlebar.append(traffic, path, el('div', 'spacer'));
 
-  // ── 스테이지 ──
-  const stage = el('main', 'stage');
+  // ── 스크린 (카메라 뷰) ──
   const viewport = el('div', 'viewport');
   const canvas = el('canvas');
   viewport.appendChild(canvas);
@@ -59,9 +61,11 @@ export function buildUI(root: HTMLElement, handlers: UIHandlers): UI {
   const big = el('div', 'big', 'TAP TO START');
   const sub = el('div', 'sub', 'webcam access required\nHTTPS or localhost only');
   overlay.append(pulse, big, sub);
-  overlay.addEventListener('click', () => handlers.onStart());
-
-  stage.append(viewport, overlay);
+  overlay.addEventListener('click', (e) => {
+    e.stopPropagation(); // viewport 탭(다음 이펙트)과 분리
+    handlers.onStart();
+  });
+  viewport.appendChild(overlay);
 
   // ── 타임라인 ──
   const timeline = el('div', 'timeline');
@@ -128,11 +132,21 @@ export function buildUI(root: HTMLElement, handlers: UIHandlers): UI {
     snapBtn,
   );
 
-  root.append(titlebar, stage, timeline, transport);
+  // ── TV 유닛: 타이틀바 + 스크린 + 타임라인 + 트랜스포트가 한 덩어리 ──
+  const device = el('div', 'device');
+  device.append(titlebar, viewport, timeline, transport);
+  root.append(device);
 
   return {
     canvas,
-    stage,
+
+    chromeHeight() {
+      return titlebar.offsetHeight + timeline.offsetHeight + transport.offsetHeight;
+    },
+
+    setDeviceWidth(cssW: number) {
+      device.style.width = `${cssW + 4}px`; // 좌우 베젤(2px) 포함
+    },
 
     hideStartOverlay() {
       overlay.classList.add('hidden');

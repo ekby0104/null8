@@ -148,10 +148,11 @@ function resizeCanvas(): void {
   if (!cam) return;
   const vw = cam.video.videoWidth || 4;
   const vh = cam.video.videoHeight || 3;
-  const rect = ui.stage.getBoundingClientRect();
+  // TV 유닛(베젤 + 크롬) 포함해서 뷰포트 안에 들어가도록 캔버스 크기 결정
   const pad = 16;
-  const availW = Math.max(64, rect.width - pad * 2);
-  const availH = Math.max(64, rect.height - pad * 2);
+  const bezel = 4;
+  const availW = Math.max(64, window.innerWidth - pad * 2 - bezel);
+  const availH = Math.max(64, window.innerHeight - pad * 2 - bezel - ui.chromeHeight());
   const scale = Math.min(availW / vw, availH / vh);
   const cssW = Math.round(vw * scale);
   const cssH = Math.round(vh * scale);
@@ -159,6 +160,7 @@ function resizeCanvas(): void {
   const dpr = Math.min(DPR_MAX, window.devicePixelRatio || 1);
   ui.canvas.style.width = `${cssW}px`;
   ui.canvas.style.height = `${cssH}px`;
+  ui.setDeviceWidth(cssW);
   for (const canvas of [ui.canvas, fxCanvas, glCanvas]) {
     canvas.width = Math.round(cssW * dpr);
     canvas.height = Math.round(cssH * dpr);
@@ -383,7 +385,7 @@ function bootstrap(): void {
   glCtx = createGlContext(glCanvas);
 
   ui.setFxLabel(`NEXT ${nextEffect().name}`);
-  new ResizeObserver(() => resizeCanvas()).observe(ui.stage);
+  window.addEventListener('resize', resizeCanvas);
 
   // 개발/테스트용 디버그 훅 — 제스처 없이 프레임 조작
   (window as unknown as Record<string, unknown>).__null8 = {
