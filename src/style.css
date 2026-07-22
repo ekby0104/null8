@@ -158,24 +158,6 @@ body {
 
 .start-overlay.hidden { display: none; }
 
-/* ── 타임라인 ─────────────────────────────── */
-.timeline {
-  height: 4px;
-  background: var(--panel2);
-  border-top: 1px solid var(--line);
-  position: relative;
-  flex: none;
-}
-
-.timeline .head {
-  position: absolute;
-  top: 0;
-  left: 0;
-  height: 100%;
-  width: 0%;
-  background: var(--accent);
-}
-
 /* ── 트랜스포트 바 (스크린 바로 아래 부착) ── */
 .transport {
   display: flex;

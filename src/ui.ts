@@ -24,9 +24,10 @@ export interface UI {
   showStartError(msg: string): void;
   setFxLabel(name: string): void;
   setTransport(timecode: string, frame: number, fps: number, bpm: number, playing: boolean): void;
-  setTimelineProgress(ratio: number): void;
-  /** 녹화 상태 표시 — 녹화 중 타임코드 빨강 점멸 (SPEC §6) */
+  /** 녹화 상태 표시 — 버튼 라벨 토글 + 타임코드 점멸 + 경과 시간 칩 표시 */
   setRecording(on: boolean): void;
+  /** 녹화 경과 시간 (초) — 녹화 중에만 표시된다 */
+  setRecordTime(seconds: number): void;
   /** 손 추적 상태 표시 — on이면 오렌지, 손 감지 중이면 초록 (M6) */
   setHands(state: 'off' | 'loading' | 'on', detected: boolean): void;
 }
@@ -67,11 +68,6 @@ export function buildUI(root: HTMLElement, handlers: UIHandlers): UI {
   });
   viewport.appendChild(overlay);
 
-  // ── 타임라인 ──
-  const timeline = el('div', 'timeline');
-  const timelineHead = el('div', 'head');
-  timeline.appendChild(timelineHead);
-
   // ── 트랜스포트 바 ──
   const transport = el('footer', 'transport');
 
@@ -83,13 +79,23 @@ export function buildUI(root: HTMLElement, handlers: UIHandlers): UI {
   const frameLcd = el('span', 'lcd small', '0');
   frameGroup.append(el('span', 'label', 'F'), frameLcd);
 
-  const playBtn = el('button', 'on', '❚❚');
-  playBtn.title = 'play / stop';
+  const playBtn = el('button', 'on', 'PAUSE');
+  playBtn.title = 'play / pause';
   playBtn.addEventListener('click', () => handlers.onPlayToggle());
 
-  const recBtn = el('button', 'rec-btn', 'VIDEO');
+  const snapBtn = el('button', undefined, 'PHOTO CAPTURE');
+  snapBtn.title = 'photo capture';
+  snapBtn.addEventListener('click', () => handlers.onSnapshot());
+
+  const recBtn = el('button', 'rec-btn', 'RECORD START');
   recBtn.title = 'record video';
   recBtn.addEventListener('click', () => handlers.onRecordToggle());
+
+  // 녹화 경과 시간 — 녹화 중에만 표시
+  const recTimeGroup = el('div', 'group');
+  const recTimeLcd = el('span', 'lcd small', '00:00');
+  recTimeGroup.append(el('span', 'label', 'REC'), recTimeLcd);
+  recTimeGroup.style.display = 'none';
 
   const fxGroup = el('div', 'group');
   const fxLcd = el('span', 'lcd small', '—');
@@ -114,34 +120,31 @@ export function buildUI(root: HTMLElement, handlers: UIHandlers): UI {
   camBtn.title = 'switch camera';
   camBtn.addEventListener('click', () => handlers.onCameraFlip());
 
-  const snapBtn = el('button', undefined, 'PHOTO CAPTURE');
-  snapBtn.title = 'photo capture';
-  snapBtn.addEventListener('click', () => handlers.onSnapshot());
-
   transport.append(
     tcGroup,
     frameGroup,
     playBtn,
+    snapBtn,
     recBtn,
+    recTimeGroup,
     fxGroup,
     el('div', 'push'),
     fpsGroup,
     tempoGroup,
     handsBtn,
     camBtn,
-    snapBtn,
   );
 
-  // ── TV 유닛: 타이틀바 + 스크린 + 타임라인 + 트랜스포트가 한 덩어리 ──
+  // ── TV 유닛: 타이틀바 + 스크린 + 트랜스포트가 한 덩어리 ──
   const device = el('div', 'device');
-  device.append(titlebar, viewport, timeline, transport);
+  device.append(titlebar, viewport, transport);
   root.append(device);
 
   return {
     canvas,
 
     chromeHeight() {
-      return titlebar.offsetHeight + timeline.offsetHeight + transport.offsetHeight;
+      return titlebar.offsetHeight + transport.offsetHeight;
     },
 
     setDeviceWidth(cssW: number) {
@@ -167,17 +170,22 @@ export function buildUI(root: HTMLElement, handlers: UIHandlers): UI {
       frameLcd.textContent = String(frame).padStart(6, '0');
       fpsLcd.textContent = fps.toFixed(1);
       tempoLcd.textContent = String(bpm);
-      playBtn.textContent = playing ? '❚❚' : '►';
+      playBtn.textContent = playing ? 'PAUSE' : 'PLAY';
       playBtn.classList.toggle('on', playing);
     },
 
-    setTimelineProgress(ratio: number) {
-      timelineHead.style.width = `${(ratio * 100).toFixed(2)}%`;
-    },
-
     setRecording(on: boolean) {
+      recBtn.textContent = on ? 'RECORD STOP' : 'RECORD START';
       recBtn.classList.toggle('recording', on);
       tcLcd.classList.toggle('rec', on);
+      recTimeGroup.style.display = on ? 'flex' : 'none';
+      if (!on) recTimeLcd.textContent = '00:00';
+    },
+
+    setRecordTime(seconds: number) {
+      const m = Math.floor(seconds / 60);
+      const s = Math.floor(seconds) % 60;
+      recTimeLcd.textContent = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
     },
 
     setHands(state, detected) {

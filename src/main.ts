@@ -53,6 +53,7 @@ const sampleCtx = sampleCanvas.getContext('2d', { willReadFrequently: true })!;
 
 const transport = new Transport();
 const recorder = new CanvasRecorder();
+let recStartMs = 0;
 
 // GL 이펙트 프레임용 더미 샘플 (CPU readback 생략)
 const emptySample = new ImageData(2, 2);
@@ -271,9 +272,9 @@ function loop(nowMs: number): void {
   if (s.playing && camReady) renderFrames(s);
 
   recorder.captureFrame(ui.canvas);
+  if (recorder.recording) ui.setRecordTime((nowMs - recStartMs) / 1000);
   ui.setHands(handsState(), handsInfo().hands > 0);
   ui.setTransport(transport.timecode(), s.frame, s.fps, s.bpm, s.playing);
-  ui.setTimelineProgress((s.beat % 4) / 4); // 1마디(4비트) 주기 타임라인
 }
 
 function download(blob: Blob, filename: string): void {
@@ -288,6 +289,7 @@ async function toggleRecord(): Promise<void> {
   if (!cam || !CanvasRecorder.supported()) return;
   if (!recorder.recording) {
     recorder.start(ui.canvas);
+    recStartMs = performance.now();
     ui.setRecording(true);
     return;
   }
