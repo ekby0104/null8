@@ -11,6 +11,7 @@ export interface UIHandlers {
   onTempoTap(): void;
   onRecordToggle(): void;
   onCameraFlip(): void; // facingMode user ↔ environment
+  onHandsToggle(): void; // MediaPipe 손 추적 on/off
 }
 
 export interface UI {
@@ -30,6 +31,8 @@ export interface UI {
   setTimelineProgress(ratio: number): void;
   /** 녹화 상태 표시 — 녹화 중 타임코드 빨강 점멸 (SPEC §6) */
   setRecording(on: boolean): void;
+  /** 손 추적 상태 표시 — on이면 오렌지, 손 감지 중이면 초록 (M6) */
+  setHands(state: 'off' | 'loading' | 'on', detected: boolean): void;
 }
 
 function el<K extends keyof HTMLElementTagNameMap>(
@@ -113,6 +116,10 @@ export function buildUI(root: HTMLElement, effects: Effect[], handlers: UIHandle
   recBtn.title = 'record';
   recBtn.addEventListener('click', () => handlers.onRecordToggle());
 
+  const handsBtn = el('button', 'hands-btn', '✋');
+  handsBtn.title = 'hand tracking';
+  handsBtn.addEventListener('click', () => handlers.onHandsToggle());
+
   const camBtn = el('button', undefined, '⇄');
   camBtn.title = 'switch camera';
   camBtn.addEventListener('click', () => handlers.onCameraFlip());
@@ -129,6 +136,7 @@ export function buildUI(root: HTMLElement, effects: Effect[], handlers: UIHandle
     el('div', 'push'),
     fpsGroup,
     tempoGroup,
+    handsBtn,
     camBtn,
     snapBtn,
   );
@@ -182,6 +190,12 @@ export function buildUI(root: HTMLElement, effects: Effect[], handlers: UIHandle
     setRecording(on: boolean) {
       recBtn.classList.toggle('recording', on);
       tcLcd.classList.toggle('rec', on);
+    },
+
+    setHands(state, detected) {
+      handsBtn.classList.toggle('loading', state === 'loading');
+      handsBtn.classList.toggle('on', state === 'on');
+      handsBtn.classList.toggle('detect', state === 'on' && detected);
     },
   };
 }

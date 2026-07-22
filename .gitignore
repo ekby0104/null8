@@ -2,3 +2,6 @@ node_modules/
 dist/
 *.local
 .DS_Store
+
+# npm run copy:mediapipe가 node_modules에서 복사 (predev/prebuild 자동 실행)
+public/mediapipe/wasm/

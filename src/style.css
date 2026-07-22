@@ -274,6 +274,15 @@ body {
   border-color: #ff5f57;
 }
 
+.transport .hands-btn.loading {
+  animation: recblink 0.8s steps(2, jump-none) infinite;
+}
+
+.transport .hands-btn.detect {
+  color: #28c840;
+  border-color: #28c840;
+}
+
 /* 녹화 중 타임코드 빨강 점멸 */
 .transport .lcd.rec {
   color: #ff5f57;

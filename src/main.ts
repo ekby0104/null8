@@ -7,6 +7,7 @@ import { Transport } from './transport.ts';
 import { buildUI, type UI } from './ui.ts';
 import { effects, type Effect, type FrameData } from './effects/index.ts';
 import { createGlContext, type GlContext } from './gl/context.ts';
+import { enableHands, disableHands, updateHands, handsState, handsDetected } from './hands.ts';
 
 const SAMPLE_W = 128; // CPU 이펙트 샘플 해상도 고정 (SPEC §7)
 const DPR_MAX = 2; // devicePixelRatio 상한 (SPEC §7)
@@ -92,6 +93,8 @@ function loop(nowMs: number): void {
   requestAnimationFrame(loop);
   const s = transport.tick(nowMs);
 
+  if (cam && cam.video.readyState >= 2) updateHands(cam.video, nowMs);
+
   if (s.playing && cam && cam.video.readyState >= 2) {
     const useGl = effectMode(activeEffect()) === 'gl';
     if (useGl) glCtx!.uploadVideo(cam.video);
@@ -109,6 +112,7 @@ function loop(nowMs: number): void {
   }
 
   recorder.captureFrame(ui.activeCanvas());
+  ui.setHands(handsState(), handsDetected());
   ui.setTransport(transport.timecode(), s.frame, s.fps, s.bpm, s.playing);
   ui.setTimelineProgress((s.beat % 4) / 4); // 1마디(4비트) 주기 타임라인
 }
@@ -132,6 +136,20 @@ async function toggleRecord(): Promise<void> {
   const result = await recorder.stop();
   if (result) {
     download(result.blob, `null8_${transport.timecode().replaceAll(':', '')}.${result.ext}`);
+  }
+}
+
+async function toggleHands(): Promise<void> {
+  if (handsState() === 'loading') return;
+  if (handsState() === 'on') {
+    disableHands();
+    return;
+  }
+  ui.setHands('loading', false);
+  try {
+    await enableHands();
+  } catch (err) {
+    console.error('hand tracking init failed:', err);
   }
 }
 
@@ -185,6 +203,7 @@ function bootstrap(): void {
     onSnapshot: snapshot,
     onRecordToggle: () => void toggleRecord(),
     onCameraFlip: () => void flipCamera(),
+    onHandsToggle: () => void toggleHands(),
     onTempoTap: () => {
       const i = TEMPOS.indexOf(transport.bpm);
       transport.bpm = TEMPOS[(i + 1) % TEMPOS.length];
