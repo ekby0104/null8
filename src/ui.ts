@@ -121,9 +121,9 @@ export function buildUI(root: HTMLElement, handlers: UIHandlers): UI {
   camBtn.addEventListener('click', () => handlers.onCameraFlip());
 
   transport.append(
+    fxGroup,
     tcGroup,
     frameGroup,
-    fxGroup,
     playBtn,
     snapBtn,
     recBtn,
