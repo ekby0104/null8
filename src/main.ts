@@ -259,20 +259,26 @@ function renderFrames(s: { time: number; frame: number; beat: number }): void {
   }
 }
 
-/** 손 포인터 마커 — 투명 원 + 흰 보더, 핀치 중이면 파란 보더 */
+/**
+ * 손가락 마커 — 엄지·검지 끝에 각각 투명 원 + 흰 보더.
+ * 원 반지름 = 핀치 판정 거리의 절반이라, 두 원이 겹쳐지는 순간이
+ * 곧 핀치 인식 시점이고 그때 둘 다 파란 보더로 바뀐다.
+ */
 function drawHandMarkers(): void {
   const info = handsInfo();
   if (info.points.length === 0 || !cam) return;
   const { width: w, height: h } = ui.canvas;
-  const r = Math.max(10, w * 0.018);
   displayCtx.lineWidth = Math.max(2, w / 500);
   for (const p of info.points) {
-    const x = (cam.mirror ? 1 - p.x : p.x) * w;
-    const y = p.y * h;
-    displayCtx.beginPath();
-    displayCtx.arc(x, y, r, 0, Math.PI * 2);
+    const r = Math.max(8, (p.threshold * w) / 2);
     displayCtx.strokeStyle = p.pinching ? '#1f6bff' : '#ffffff';
-    displayCtx.stroke();
+    for (const tip of [p.thumb, p.index]) {
+      const x = (cam.mirror ? 1 - tip.x : tip.x) * w;
+      const y = tip.y * h;
+      displayCtx.beginPath();
+      displayCtx.arc(x, y, r, 0, Math.PI * 2);
+      displayCtx.stroke();
+    }
   }
 }
 

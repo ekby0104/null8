@@ -5,11 +5,18 @@ export type HandsState = 'off' | 'loading' | 'on';
 
 type HandLandmarkerT = import('@mediapipe/tasks-vision').HandLandmarker;
 
-/** 감지된 손 하나의 포인터 (엄지-검지 중점, 비디오 정규화 좌표) */
+/** 감지된 손 하나의 손가락 상태 (비디오 정규화 좌표) */
 export interface HandPoint {
+  /** 엄지 끝 */
+  thumb: { x: number; y: number };
+  /** 검지 끝 */
+  index: { x: number; y: number };
+  /** 핀치 판정 거리 (정규화) — 마커 원 지름과 일치시켜 "겹침 = 핀치"가 되게 한다 */
+  threshold: number;
+  pinching: boolean;
+  /** 핀치 중점 — 프레임 모서리로 사용 */
   x: number;
   y: number;
-  pinching: boolean;
 }
 
 /** 비디오 정규화 좌표(0..1, 미러 적용 전)의 핀치 상태 */
@@ -94,10 +101,14 @@ export function updateHands(video: HTMLVideoElement, nowMs: number): void {
     const index = lm[8];
     const scale = Math.hypot(lm[0].x - lm[9].x, lm[0].y - lm[9].y);
     const d = Math.hypot(thumb.x - index.x, thumb.y - index.y);
+    const threshold = Math.max(0.025, scale * 0.38);
     points.push({
+      thumb: { x: thumb.x, y: thumb.y },
+      index: { x: index.x, y: index.y },
+      threshold,
+      pinching: d < threshold,
       x: (thumb.x + index.x) / 2,
       y: (thumb.y + index.y) / 2,
-      pinching: d < Math.max(0.025, scale * 0.38),
     });
   }
 
