@@ -5,12 +5,21 @@ export type HandsState = 'off' | 'loading' | 'on';
 
 type HandLandmarkerT = import('@mediapipe/tasks-vision').HandLandmarker;
 
+/** 감지된 손 하나의 포인터 (엄지-검지 중점, 비디오 정규화 좌표) */
+export interface HandPoint {
+  x: number;
+  y: number;
+  pinching: boolean;
+}
+
 /** 비디오 정규화 좌표(0..1, 미러 적용 전)의 핀치 상태 */
 export interface HandsInfo {
   /** 감지된 손 수 (0-2) */
   hands: number;
   /** 핀치 중인 손 수 */
   pinching: number;
+  /** 감지된 손마다의 포인터 — 화면 마커 표시용 */
+  points: HandPoint[];
   /** 양손 핀치 시 두 핀치 지점 — 사각형 대각 모서리 */
   corners: [{ x: number; y: number }, { x: number; y: number }] | null;
 }
@@ -19,7 +28,7 @@ let state: HandsState = 'off';
 let landmarker: HandLandmarkerT | null = null;
 let lastVideoTime = -1;
 let lastDetectMs = 0;
-let info: HandsInfo = { hands: 0, pinching: 0, corners: null };
+let info: HandsInfo = { hands: 0, pinching: 0, points: [], corners: null };
 
 export function handsState(): HandsState {
   return state;
@@ -62,7 +71,7 @@ export function disableHands(): void {
   state = 'off';
   lastVideoTime = -1;
   lastDetectMs = 0;
-  info = { hands: 0, pinching: 0, corners: null };
+  info = { hands: 0, pinching: 0, points: [], corners: null };
 }
 
 /** 렌더 루프에서 매 프레임 호출. 새 비디오 프레임에서 최대 ~15Hz로 검출한다. */
@@ -74,7 +83,7 @@ export function updateHands(video: HTMLVideoElement, nowMs: number): void {
   lastDetectMs = nowMs;
 
   const result = landmarker.detectForVideo(video, nowMs);
-  const pinchPoints: { x: number; y: number }[] = [];
+  const points: HandPoint[] = [];
   const handsCount = result.landmarks?.length ?? 0;
 
   for (const lm of result.landmarks ?? []) {
@@ -85,15 +94,18 @@ export function updateHands(video: HTMLVideoElement, nowMs: number): void {
     const index = lm[8];
     const scale = Math.hypot(lm[0].x - lm[9].x, lm[0].y - lm[9].y);
     const d = Math.hypot(thumb.x - index.x, thumb.y - index.y);
-    if (d < Math.max(0.025, scale * 0.38)) {
-      pinchPoints.push({ x: (thumb.x + index.x) / 2, y: (thumb.y + index.y) / 2 });
-    }
+    points.push({
+      x: (thumb.x + index.x) / 2,
+      y: (thumb.y + index.y) / 2,
+      pinching: d < Math.max(0.025, scale * 0.38),
+    });
   }
 
+  const pinchPoints = points.filter((p) => p.pinching);
   info = {
     hands: handsCount,
     pinching: pinchPoints.length,
-    corners:
-      pinchPoints.length >= 2 ? [pinchPoints[0], pinchPoints[1]] : null,
+    points,
+    corners: pinchPoints.length >= 2 ? [pinchPoints[0], pinchPoints[1]] : null,
   };
 }

@@ -259,6 +259,23 @@ function renderFrames(s: { time: number; frame: number; beat: number }): void {
   }
 }
 
+/** 손 포인터 마커 — 투명 원 + 흰 보더, 핀치 중이면 파란 보더 */
+function drawHandMarkers(): void {
+  const info = handsInfo();
+  if (info.points.length === 0 || !cam) return;
+  const { width: w, height: h } = ui.canvas;
+  const r = Math.max(10, w * 0.018);
+  displayCtx.lineWidth = Math.max(2, w / 500);
+  for (const p of info.points) {
+    const x = (cam.mirror ? 1 - p.x : p.x) * w;
+    const y = p.y * h;
+    displayCtx.beginPath();
+    displayCtx.arc(x, y, r, 0, Math.PI * 2);
+    displayCtx.strokeStyle = p.pinching ? '#1f6bff' : '#ffffff';
+    displayCtx.stroke();
+  }
+}
+
 function loop(nowMs: number): void {
   requestAnimationFrame(loop);
   const s = transport.tick(nowMs);
@@ -269,7 +286,10 @@ function loop(nowMs: number): void {
     updateFrames(nowMs);
   }
 
-  if (s.playing && camReady) renderFrames(s);
+  if (s.playing && camReady) {
+    renderFrames(s);
+    drawHandMarkers();
+  }
 
   recorder.captureFrame(ui.canvas);
   if (recorder.recording) ui.setRecordTime((nowMs - recStartMs) / 1000);
