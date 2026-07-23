@@ -59,6 +59,11 @@ export async function enableHands(): Promise<void> {
       },
       runningMode: 'VIDEO' as const,
       numHands: 2,
+      // 기본값(0.5)보다 낮춰서 멀리 있는(작게 보이는) 손과
+      // 화면 가장자리에 걸친 손도 끈질기게 잡는다
+      minHandDetectionConfidence: 0.3,
+      minHandPresenceConfidence: 0.3,
+      minTrackingConfidence: 0.3,
     });
     try {
       landmarker = await HandLandmarker.createFromOptions(fileset, options('GPU'));

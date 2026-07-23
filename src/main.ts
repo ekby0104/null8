@@ -95,12 +95,19 @@ function contains(outer: Rect, inner: Rect): boolean {
   );
 }
 
+const EDGE_SNAP = 0.06; // 이 거리 안쪽에서 핀치하면 프레임을 화면 끝까지 스냅
+
 function cornersToRect(corners: { x: number; y: number }[]): Rect {
   const pts = corners.map((p) => ({ x: cam!.mirror ? 1 - p.x : p.x, y: p.y }));
   let x0 = Math.min(pts[0].x, pts[1].x);
   let x1 = Math.max(pts[0].x, pts[1].x);
   let y0 = Math.min(pts[0].y, pts[1].y);
   let y1 = Math.max(pts[0].y, pts[1].y);
+  // 가장자리 스냅 — 손을 화면 밖까지 뻗지 않아도 풀블리드 프레임 가능
+  if (x0 < EDGE_SNAP) x0 = 0;
+  if (y0 < EDGE_SNAP) y0 = 0;
+  if (x1 > 1 - EDGE_SNAP) x1 = 1;
+  if (y1 > 1 - EDGE_SNAP) y1 = 1;
   if (x1 - x0 < MIN_RECT) x1 = x0 + MIN_RECT;
   if (y1 - y0 < MIN_RECT) y1 = y0 + MIN_RECT;
   return { x0, y0, x1, y1 };
