@@ -23,6 +23,7 @@ import {
   handsState,
   handsInfo,
   consumeWipe,
+  consumeFist,
 } from './hands.ts';
 import { coverRect, toCanvas, midpoint } from './core/coords.ts';
 import {
@@ -300,6 +301,26 @@ function drawHandMarkers(): void {
   displayCtx.lineWidth = Math.max(2, w / 500);
 
   for (const p of info.points) {
+    // 주먹: 손가락 원 대신 손바닥 위 진행 링 (다 차면 전체 리셋)
+    if (p.fist) {
+      if (p.fistProgress > 0) {
+        const c = toCanvas(p.palm, rect, cam.mirror);
+        const rr = Math.max(14, w * 0.03);
+        displayCtx.save();
+        displayCtx.lineWidth = Math.max(3, w / 400);
+        displayCtx.strokeStyle = 'rgba(255,255,255,0.35)';
+        displayCtx.beginPath();
+        displayCtx.arc(c.x, c.y, rr, 0, Math.PI * 2);
+        displayCtx.stroke();
+        displayCtx.strokeStyle = '#ffffff';
+        displayCtx.beginPath();
+        displayCtx.arc(c.x, c.y, rr, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * p.fistProgress);
+        displayCtx.stroke();
+        displayCtx.restore();
+      }
+      continue;
+    }
+
     const thumb = toCanvas(p.thumb, rect, cam.mirror);
     const index = toCanvas(p.index, rect, cam.mirror);
     // 한 손 핀치(그리기) = 초록, 양손 핀치(프레이밍) = 파랑, 평상시 흰색
@@ -341,7 +362,7 @@ function updateDebugHud(): void {
   const lines = info.points.map(
     (p) =>
       `${p.handedness.padEnd(6)} ratio ${p.ratio.toFixed(2)} ` +
-      `${p.pinching ? 'PINCH' : p.open ? 'OPEN ' : '  -  '} ` +
+      `${p.pinching ? 'PINCH' : p.fist ? 'FIST ' : p.open ? 'OPEN ' : '  -  '} ` +
       `${isPenDown(p.handedness) ? 'DRAW' : ''}`,
   );
   lines.push(`strokes ${d.strokes}  points ${d.points}  hands ${info.hands}`);
@@ -355,7 +376,12 @@ function loop(nowMs: number): void {
   const camReady = cam !== null && cam.video.readyState >= 2;
   if (camReady) {
     updateHands(cam!.video, nowMs);
-    if (consumeWipe()) wipeAll(nowMs); // 손바닥 펴고 흔들기 = 전체 초기화
+    if (consumeFist()) wipeAll(nowMs); // 주먹 1초 유지 = 전체 리셋
+    if (consumeWipe()) {
+      // 손바닥 펴고 흔들기 = 낙서만 지우기
+      clearStrokes();
+      wipeFlashUntil = nowMs + 200;
+    }
     updateFrames(nowMs);
   }
 

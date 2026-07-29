@@ -21,6 +21,12 @@ export interface HandPoint {
   pinching: boolean;
   /** 손바닥 펴짐 (지우개 흔들기 제스처 판정용) */
   open: boolean;
+  /** 주먹 쥠 (전체 리셋 제스처) */
+  fist: boolean;
+  /** 주먹 유지 진행도 0..1 — 마커 진행 링 표시용 */
+  fistProgress: number;
+  /** 손바닥 중심 (중지 MCP 9) — 진행 링 위치 */
+  palm: { x: number; y: number };
   /** 핀치 중점 — 프레임 모서리/펜 촉으로 사용 */
   x: number;
   y: number;
@@ -83,6 +89,22 @@ export function consumeWipe(): boolean {
   return t;
 }
 
+// 주먹 유지 제스처 — 주먹을 FIST_HOLD_MS 이상 쥐고 있으면 전체 리셋.
+// 유지하는 동안 진행 링이 차오르고, 도중에 펴면 취소된다.
+const FIST_HOLD_MS = 1000;
+const FIST_COOLDOWN_MS = 2000;
+
+const fistSince = new Map<string, number>();
+let fistTriggered = false;
+let fistCooldownUntil = 0;
+
+/** 주먹 리셋 발동 여부 — 읽으면 소비된다 (1회성) */
+export function consumeFist(): boolean {
+  const t = fistTriggered;
+  fistTriggered = false;
+  return t;
+}
+
 export function handsState(): HandsState {
   return state;
 }
@@ -131,7 +153,9 @@ export function disableHands(): void {
   lastDetectMs = 0;
   pinchSM.clear();
   waveSM.clear();
+  fistSince.clear();
   wipeTriggered = false;
+  fistTriggered = false;
   info = { hands: 0, pinching: 0, points: [], corners: null };
 }
 
@@ -171,13 +195,32 @@ export function updateHands(video: HTMLVideoElement, nowMs: number): void {
     const pinch = distPx(thumb, index);
     const ratio = pinch / Math.max(palm, 1e-6);
 
+    // 손가락 신전 카운트: 네 손가락 끝(8,12,16,20)이 PIP(6,10,14,18)보다
+    // 손목(0)에서 확실히 멀면 펴진 것
+    let extended = 0;
+    for (const [tip, pip] of [
+      [8, 6],
+      [12, 10],
+      [16, 14],
+      [20, 18],
+    ] as const) {
+      if (distPx(lm[0], lm[tip]) > distPx(lm[0], lm[pip]) * 1.15) extended++;
+    }
+    const open = extended >= 3;
+    const fist = extended <= 1;
+
     // 히스테리시스 + 디바운스 (§4.2): 중간 지대(0.4~0.6)에서는 직전 상태 유지
     let sm = pinchSM.get(handedness);
     if (!sm) {
       sm = { down: false, onFrames: 0, offFrames: 0 };
       pinchSM.set(handedness, sm);
     }
-    if (ratio < PINCH_ON) {
+    if (fist) {
+      // 주먹에서는 엄지-검지가 가까워져 핀치로 오인되므로 핀치 무효화
+      sm.down = false;
+      sm.onFrames = 0;
+      sm.offFrames = 0;
+    } else if (ratio < PINCH_ON) {
       sm.onFrames++;
       sm.offFrames = 0;
       if (sm.onFrames >= STATE_FRAMES) sm.down = true;
@@ -189,19 +232,6 @@ export function updateHands(video: HTMLVideoElement, nowMs: number): void {
       sm.onFrames = 0;
       sm.offFrames = 0;
     }
-
-    // 손바닥 펴짐: 네 손가락 끝(8,12,16,20)이 PIP(6,10,14,18)보다
-    // 손목(0)에서 확실히 멀면 펴진 것 — 3개 이상이면 open
-    let extended = 0;
-    for (const [tip, pip] of [
-      [8, 6],
-      [12, 10],
-      [16, 14],
-      [20, 18],
-    ] as const) {
-      if (distPx(lm[0], lm[tip]) > distPx(lm[0], lm[pip]) * 1.15) extended++;
-    }
-    const open = extended >= 3;
 
     // 지우개 흔들기 감지 — 손바닥 펴고 핀치 아님일 때만
     let wave = waveSM.get(handedness);
@@ -237,6 +267,21 @@ export function updateHands(video: HTMLVideoElement, nowMs: number): void {
       wave.reversals = [];
     }
 
+    // 주먹 유지 → 전체 리셋 (진행 링으로 피드백, 도중에 펴면 취소)
+    let fistProgress = 0;
+    if (fist && nowMs > fistCooldownUntil) {
+      if (!fistSince.has(handedness)) fistSince.set(handedness, nowMs);
+      fistProgress = Math.min(1, (nowMs - fistSince.get(handedness)!) / FIST_HOLD_MS);
+      if (fistProgress >= 1) {
+        fistTriggered = true;
+        fistCooldownUntil = nowMs + FIST_COOLDOWN_MS;
+        fistSince.delete(handedness);
+        fistProgress = 0;
+      }
+    } else {
+      fistSince.delete(handedness);
+    }
+
     points.push({
       handedness,
       thumb: { x: thumb.x, y: thumb.y },
@@ -245,6 +290,9 @@ export function updateHands(video: HTMLVideoElement, nowMs: number): void {
       ratio,
       pinching: sm.down,
       open,
+      fist,
+      fistProgress,
+      palm: { x: lm[9].x, y: lm[9].y },
       x: (thumb.x + index.x) / 2,
       y: (thumb.y + index.y) / 2,
     });
@@ -256,6 +304,9 @@ export function updateHands(video: HTMLVideoElement, nowMs: number): void {
   }
   for (const key of [...waveSM.keys()]) {
     if (!seen.has(key)) waveSM.delete(key);
+  }
+  for (const key of [...fistSince.keys()]) {
+    if (!seen.has(key)) fistSince.delete(key);
   }
 
   const pinchPoints = points.filter((p) => p.pinching);
