@@ -1,6 +1,6 @@
 # null8 — Webcam FX
 
-**▶ 데모: https://ekby0104.github.io/touch-designer/**
+**▶ 데모: https://ekby0104.github.io/null8/**
 (데스크톱/모바일 브라우저에서 바로 실행 — 카메라 권한만 허용하면 됩니다)
 
 TouchDesigner 스타일의 실시간 웹캠 비주얼 이펙트 웹앱.
