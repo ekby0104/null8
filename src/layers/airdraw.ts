@@ -55,8 +55,6 @@ interface Pen {
   pendingSince: number;
   /** ink에 반영된 점 수 (증분 드로잉 커서) */
   inked: number;
-  /** 직전 프레임 핀치 상태 — 핀치 시작 에지 검출용 (물감 찍기) */
-  wasPinching: boolean;
 }
 
 const pens = new Map<string, Pen>();
@@ -65,59 +63,6 @@ let totalPoints = 0;
 
 let ink: HTMLCanvasElement | null = null;
 let ictx: CanvasRenderingContext2D | null = null;
-
-// ── 물감통 팔레트 — 왼쪽 가장자리, 통 위에서 핀치 = 색 찍기 ──
-interface Pot {
-  x: number;
-  y: number;
-  r: number;
-  color: string;
-}
-
-let pots: Pot[] = [];
-// 물감통 주변 그리기 금지 구역 (획이 물감통까지 이어지는 것 방지)
-let paletteZone = { x0: 0, y0: 0, x1: 0, y1: 0 };
-let dipFlashPot = -1; // 방금 찍은 물감통 (커지는 피드백)
-let dipFlashUntil = 0;
-
-function layoutPalette(w: number, h: number): void {
-  const r = Math.max(12, w * 0.022);
-  const cx = r * 2.2;
-  const gap = r * 2.7;
-  const totalH = gap * (INK_COLORS.length - 1);
-  const y0 = h / 2 - totalH / 2;
-  pots = INK_COLORS.map((color, i) => ({ x: cx, y: y0 + i * gap, r, color }));
-  paletteZone = { x0: 0, y0: y0 - gap, x1: cx + r * 1.9, y1: y0 + totalH + gap };
-}
-
-function inPaletteZone(p: { x: number; y: number }): boolean {
-  return p.x >= paletteZone.x0 && p.x <= paletteZone.x1 && p.y >= paletteZone.y0 && p.y <= paletteZone.y1;
-}
-
-/** 물감통 렌더 — 손이 보일 때만 호출된다. 선택된 색은 링으로 강조 */
-export function drawPalette(ctx: CanvasRenderingContext2D, nowMs: number): void {
-  for (let i = 0; i < pots.length; i++) {
-    const pot = pots[i];
-    const flash = i === dipFlashPot && nowMs < dipFlashUntil;
-    const selected = pot.color === inkColor;
-    const r = pot.r * (flash ? 1.35 : selected ? 1.15 : 1);
-    // 어떤 배경에서도 보이도록 이중 테두리 (밝은 색 물감 대비)
-    ctx.beginPath();
-    ctx.arc(pot.x, pot.y, r, 0, Math.PI * 2);
-    ctx.fillStyle = pot.color;
-    ctx.fill();
-    ctx.lineWidth = 2;
-    ctx.strokeStyle = 'rgba(20,20,20,0.6)';
-    ctx.stroke();
-    if (selected) {
-      ctx.beginPath();
-      ctx.arc(pot.x, pot.y, r + 4, 0, Math.PI * 2);
-      ctx.lineWidth = 2;
-      ctx.strokeStyle = '#ffffff';
-      ctx.stroke();
-    }
-  }
-}
 
 function setupCtx(): void {
   if (!ictx) return;
@@ -149,7 +94,6 @@ export function resizeInk(w: number, h: number): void {
   }
   ink.width = w;
   ink.height = h;
-  layoutPalette(w, h);
   setupCtx();
   redrawInk();
 }
@@ -257,27 +201,8 @@ export function updateAirdraw(
     seen.add(p.handedness);
     let pen = pens.get(p.handedness);
     if (!pen) {
-      pen = { drawing: false, stroke: null, pendingSince: -1, inked: 0, wasPinching: false };
+      pen = { drawing: false, stroke: null, pendingSince: -1, inked: 0 };
       pens.set(p.handedness, pen);
-    }
-
-    // 펜 촉: 엄지-검지 중점 (§4.3)
-    const nib = midpoint(toCanvas(p.thumb, rect, mirrored), toCanvas(p.index, rect, mirrored));
-    const pinchStart = p.pinching && !pen.wasPinching;
-    pen.wasPinching = p.pinching;
-    const inZone = inPaletteZone(nib);
-
-    // 물감 찍기: 물감통 위에서 핀치하는 순간 색 선택 (획은 시작하지 않음)
-    if (pinchStart && inZone && !framingActive) {
-      for (let i = 0; i < pots.length; i++) {
-        if (Math.hypot(nib.x - pots[i].x, nib.y - pots[i].y) < pots[i].r * 1.6) {
-          setInkColor(pots[i].color);
-          dipFlashPot = i;
-          dipFlashUntil = nowMs + 300;
-          break;
-        }
-      }
-      continue;
     }
 
     // 프레이밍 전환 (A안): 버퍼 중이면 소급 취소, 커밋됐으면 획만 종료
@@ -287,14 +212,14 @@ export function updateAirdraw(
       continue;
     }
 
-    // 펜 올림 — 그리던 획이 물감통 구역에 들어가도 경계에서 종료
-    if (pen.drawing && (!p.pinching || inZone)) {
+    // 펜 올림
+    if (pen.drawing && !p.pinching) {
       endStroke(pen);
       continue;
     }
 
-    // 펜 내림 (프레이밍 중·물감통 구역에서는 시작하지 않음)
-    if (!pen.drawing && p.pinching && !framingActive && !inZone) {
+    // 펜 내림 (프레이밍 중에는 시작하지 않음)
+    if (!pen.drawing && p.pinching && !framingActive) {
       pen.drawing = true;
       pen.stroke = { color: inkColor, pts: [] };
       pen.pendingSince = nowMs;
@@ -302,6 +227,9 @@ export function updateAirdraw(
     }
 
     if (!pen.drawing || !pen.stroke) continue;
+
+    // 펜 촉: 엄지-검지 중점 (§4.3)
+    const nib = midpoint(toCanvas(p.thumb, rect, mirrored), toCanvas(p.index, rect, mirrored));
     const last = pen.stroke.pts[pen.stroke.pts.length - 1];
     if (!last || Math.hypot(nib.x - last.x, nib.y - last.y) >= AIRDRAW.minDist) {
       pen.stroke.pts.push({ x: nib.x, y: nib.y, w: AIRDRAW.baseWidth });
