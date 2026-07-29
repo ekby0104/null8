@@ -18,14 +18,7 @@ import { effects, type Effect, type FrameData } from './effects/index.ts';
 import { createGlContext, type GlContext } from './gl/context.ts';
 import { enableHands, disableHands, updateHands, handsState, handsInfo } from './hands.ts';
 import { coverRect, toCanvas, midpoint } from './core/coords.ts';
-import {
-  updateAirdraw,
-  compositeInk,
-  resizeInk,
-  isPenDown,
-  getInkColor,
-  airdrawDebug,
-} from './layers/airdraw.ts';
+import { updateAirdraw, compositeInk, resizeInk, isPenDown, airdrawDebug } from './layers/airdraw.ts';
 
 const SAMPLE_W = 128; // CPU 이펙트 샘플 해상도 고정 (SPEC §7)
 const DPR_MAX = 2; // devicePixelRatio 상한 (SPEC §7)
@@ -294,9 +287,9 @@ function drawHandMarkers(): void {
   for (const p of info.points) {
     const thumb = toCanvas(p.thumb, rect, cam.mirror);
     const index = toCanvas(p.index, rect, cam.mirror);
-    // 그리는 중이면 잉크 색, 핀치(프레이밍 등)면 파랑, 평상시 흰색 (AIRDRAW §8)
-    const drawing = isPenDown(p.handedness);
-    const color = drawing ? getInkColor() : p.pinching ? '#1f6bff' : '#ffffff';
+    // 한 손 핀치(그리기) = 초록, 양손 핀치(프레이밍) = 파랑, 평상시 흰색
+    const penDown = isPenDown(p.handedness);
+    const color = penDown ? '#28c840' : p.pinching ? '#1f6bff' : '#ffffff';
     displayCtx.strokeStyle = color;
 
     // 엄지↔검지 연결선 (핀치 정도 시각화)
