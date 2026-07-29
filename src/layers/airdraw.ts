@@ -24,8 +24,8 @@ export const AIRDRAW = {
   bufferMs: 250, // 획 시작 후 ink 커밋을 미루는 시간 (프레이밍 전환 취소창)
 };
 
-/** 잉크 색 스와치 — 화이트 톤 + 파랑 액센트 디자인 기준 (§8, 현행화) */
-export const INK_COLORS = ['#ffffff', '#141414', '#8a8a8a', '#1f6bff', '#9cc3ff'];
+/** 잉크 색 스와치 — 기본은 그리기 마커와 같은 초록 (§8) */
+export const INK_COLORS = ['#28c840', '#ffffff', '#141414', '#1f6bff', '#9cc3ff'];
 
 let inkColor = INK_COLORS[0];
 
