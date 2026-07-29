@@ -32,6 +32,7 @@ import {
   resizeInk,
   isPenDown,
   clearStrokes,
+  drawPalette,
   airdrawDebug,
 } from './layers/airdraw.ts';
 
@@ -399,6 +400,7 @@ function loop(nowMs: number): void {
 
     renderFrames(s);
     compositeInk(displayCtx); // 잉크는 이펙트 위, 커서 아래 (AIRDRAW §2)
+    if (info.hands > 0) drawPalette(displayCtx, nowMs); // 물감통은 손이 보일 때만
     drawHandMarkers();
 
     // 초기화 피드백 — 짧은 흰색 플래시
