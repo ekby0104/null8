@@ -17,6 +17,7 @@ import { buildUI, type UI } from './ui.ts';
 import { effects, type Effect, type FrameData } from './effects/index.ts';
 import { createGlContext, type GlContext } from './gl/context.ts';
 import { enableHands, disableHands, updateHands, handsState, handsInfo } from './hands.ts';
+import { coverRect, toCanvas, midpoint } from './core/coords.ts';
 
 const SAMPLE_W = 128; // CPU 이펙트 샘플 해상도 고정 (SPEC §7)
 const DPR_MAX = 2; // devicePixelRatio 상한 (SPEC §7)
@@ -267,25 +268,48 @@ function renderFrames(s: { time: number; frame: number; beat: number }): void {
 }
 
 /**
- * 손가락 마커 — 엄지·검지 끝에 각각 투명 원 + 흰 보더.
- * 원 반지름 = 핀치 판정 거리의 절반이라, 두 원이 겹쳐지는 순간이
- * 곧 핀치 인식 시점이고 그때 둘 다 파란 보더로 바뀐다.
+ * 손가락 마커 (AIRDRAW §3/§4.3/§8 좌표계 기반)
+ * - 엄지·검지 끝에 각각 투명 원 + 흰 보더. 원 반지름 = 핀치 판정 거리의
+ *   절반이라, 두 원이 겹쳐지는 순간이 곧 핀치 인식 시점 (그때 파란 보더)
+ * - 엄지↔검지를 잇는 얇은 선으로 핀치 정도를 시각화
+ * - 펜 촉(nib) = 엄지-검지 중점에 작은 커서 원 — 공중 낙서의 펜 위치
  */
 function drawHandMarkers(): void {
   const info = handsInfo();
   if (info.points.length === 0 || !cam) return;
   const { width: w, height: h } = ui.canvas;
+  const rect = coverRect(cam.video.videoWidth || 4, cam.video.videoHeight || 3, w, h);
   displayCtx.lineWidth = Math.max(2, w / 500);
+
   for (const p of info.points) {
-    const r = Math.max(8, (p.threshold * w) / 2);
-    displayCtx.strokeStyle = p.pinching ? '#1f6bff' : '#ffffff';
-    for (const tip of [p.thumb, p.index]) {
-      const x = (cam.mirror ? 1 - tip.x : tip.x) * w;
-      const y = tip.y * h;
+    const thumb = toCanvas(p.thumb, rect, cam.mirror);
+    const index = toCanvas(p.index, rect, cam.mirror);
+    const color = p.pinching ? '#1f6bff' : '#ffffff';
+    displayCtx.strokeStyle = color;
+
+    // 엄지↔검지 연결선 (핀치 정도 시각화)
+    displayCtx.save();
+    displayCtx.lineWidth = Math.max(1, w / 900);
+    displayCtx.beginPath();
+    displayCtx.moveTo(thumb.x, thumb.y);
+    displayCtx.lineTo(index.x, index.y);
+    displayCtx.stroke();
+    displayCtx.restore();
+
+    // 손가락 끝 원 — 겹침 = 핀치
+    const r = Math.max(8, (p.threshold * rect.w) / 2);
+    for (const tip of [thumb, index]) {
       displayCtx.beginPath();
-      displayCtx.arc(x, y, r, 0, Math.PI * 2);
+      displayCtx.arc(tip.x, tip.y, r, 0, Math.PI * 2);
       displayCtx.stroke();
     }
+
+    // 펜 촉 커서 (AIRDRAW §4.3 — 중점이라 펜을 쥔 감각)
+    const nib = midpoint(thumb, index);
+    displayCtx.beginPath();
+    displayCtx.arc(nib.x, nib.y, Math.max(3, w / 240), 0, Math.PI * 2);
+    displayCtx.fillStyle = color;
+    displayCtx.fill();
   }
 }
 
