@@ -18,6 +18,14 @@ import { effects, type Effect, type FrameData } from './effects/index.ts';
 import { createGlContext, type GlContext } from './gl/context.ts';
 import { enableHands, disableHands, updateHands, handsState, handsInfo } from './hands.ts';
 import { coverRect, toCanvas, midpoint } from './core/coords.ts';
+import {
+  updateAirdraw,
+  compositeInk,
+  resizeInk,
+  isPenDown,
+  getInkColor,
+  airdrawDebug,
+} from './layers/airdraw.ts';
 
 const SAMPLE_W = 128; // CPU 이펙트 샘플 해상도 고정 (SPEC §7)
 const DPR_MAX = 2; // devicePixelRatio 상한 (SPEC §7)
@@ -47,6 +55,7 @@ let glCanvas: HTMLCanvasElement; // WebGL 이펙트 오프스크린
 let glCtx: GlContext | null = null; // WebGL2 미지원이면 null → CPU 폴백
 let starting = false;
 let flipping = false;
+let debugHud: HTMLElement | null = null; // ?debug=1 (AIRDRAW §8)
 
 // 저해상도 샘플 캔버스 — getImageData는 프레임당 1회 (SPEC §7)
 const sampleCanvas = document.createElement('canvas');
@@ -181,6 +190,7 @@ function resizeCanvas(): void {
     canvas.width = Math.round(cssW * dpr);
     canvas.height = Math.round(cssH * dpr);
   }
+  resizeInk(ui.canvas.width, ui.canvas.height); // 낙서 좌표 스케일 + 재그리기 (AIRDRAW §10)
 
   sampleCanvas.width = SAMPLE_W;
   sampleCanvas.height = Math.max(2, Math.round((SAMPLE_W * vh) / vw));
@@ -284,7 +294,9 @@ function drawHandMarkers(): void {
   for (const p of info.points) {
     const thumb = toCanvas(p.thumb, rect, cam.mirror);
     const index = toCanvas(p.index, rect, cam.mirror);
-    const color = p.pinching ? '#1f6bff' : '#ffffff';
+    // 그리는 중이면 잉크 색, 핀치(프레이밍 등)면 파랑, 평상시 흰색 (AIRDRAW §8)
+    const drawing = isPenDown(p.handedness);
+    const color = drawing ? getInkColor() : p.pinching ? '#1f6bff' : '#ffffff';
     displayCtx.strokeStyle = color;
 
     // 엄지↔검지 연결선 (핀치 정도 시각화)
@@ -313,6 +325,20 @@ function drawHandMarkers(): void {
   }
 }
 
+/** ?debug=1 — 손별 ratio/펜 상태 HUD (AIRDRAW §8, 임계값 튜닝용) */
+function updateDebugHud(): void {
+  if (!debugHud) return;
+  const info = handsInfo();
+  const d = airdrawDebug();
+  const lines = info.points.map(
+    (p) =>
+      `${p.handedness.padEnd(6)} ratio ${p.ratio.toFixed(2)} ` +
+      `${p.pinching ? 'PINCH' : '  -  '} ${isPenDown(p.handedness) ? 'DRAW' : ''}`,
+  );
+  lines.push(`strokes ${d.strokes}  points ${d.points}  hands ${info.hands}`);
+  debugHud.textContent = lines.join('\n');
+}
+
 function loop(nowMs: number): void {
   requestAnimationFrame(loop);
   const s = transport.tick(nowMs);
@@ -324,8 +350,21 @@ function loop(nowMs: number): void {
   }
 
   if (s.playing && camReady) {
+    // 공중 낙서 펜 상태 갱신 — 한 손 핀치 = 그리기, 양손 핀치/프레임 조정 = 프레이밍 (A안)
+    const info = handsInfo();
+    const framingActive = drawing !== null || info.pinching >= 2;
+    const rect = coverRect(
+      cam!.video.videoWidth || 4,
+      cam!.video.videoHeight || 3,
+      ui.canvas.width,
+      ui.canvas.height,
+    );
+    updateAirdraw(info.points, rect, cam!.mirror, framingActive, nowMs);
+
     renderFrames(s);
+    compositeInk(displayCtx); // 잉크는 이펙트 위, 커서 아래 (AIRDRAW §2)
     drawHandMarkers();
+    updateDebugHud();
   }
 
   recorder.captureFrame(ui.canvas);
@@ -452,6 +491,12 @@ function bootstrap(): void {
 
   ui.setFxLabel(`NEXT ${nextEffect().name}`);
   window.addEventListener('resize', resizeCanvas);
+
+  if (new URLSearchParams(location.search).has('debug')) {
+    debugHud = document.createElement('pre');
+    debugHud.className = 'debug-hud';
+    document.body.appendChild(debugHud);
+  }
 
   // 개발/테스트용 디버그 훅 — 제스처 없이 프레임 조작
   (window as unknown as Record<string, unknown>).__null8 = {

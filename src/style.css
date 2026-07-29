@@ -252,3 +252,22 @@ body {
 }
 
 .transport .push { flex: 1; min-width: 6px; }
+
+/* ?debug=1 — 손 추적/펜 상태 HUD (AIRDRAW §8) */
+.debug-hud {
+  position: fixed;
+  top: 8px;
+  left: 8px;
+  z-index: 99;
+  margin: 0;
+  padding: 6px 8px;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.5;
+  pointer-events: none;
+  white-space: pre;
+}
