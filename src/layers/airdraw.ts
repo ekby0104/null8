@@ -63,19 +63,28 @@ let totalPoints = 0;
 
 let ink: HTMLCanvasElement | null = null;
 let ictx: CanvasRenderingContext2D | null = null;
+// 헤일로(외곽선) 전용 레이어 — 어떤 배경에서도 선이 또렷하게 보이도록
+// 색 선 아래에 대비색 외곽선을 깐다. 별도 캔버스라 조각 이음새에 틈이 없다.
+let halo: HTMLCanvasElement | null = null;
+let hctx: CanvasRenderingContext2D | null = null;
 
-function setupCtx(): void {
-  if (!ictx) return;
-  ictx.lineCap = 'round';
-  ictx.lineJoin = 'round';
+const HALO_EXTRA = 5; // 선 두께에 더해지는 헤일로 폭 (px)
+
+/** 밝은 잉크는 어두운 헤일로, 어두운 잉크는 흰 헤일로 */
+function haloColor(color: string): string {
+  const n = parseInt(color.slice(1), 16);
+  const luma = 0.2126 * ((n >> 16) & 255) + 0.7152 * ((n >> 8) & 255) + 0.0722 * (n & 255);
+  return luma < 128 ? 'rgba(255,255,255,0.85)' : 'rgba(18,18,18,0.7)';
 }
 
 /** 캔버스 크기 변경 — 저장된 점을 스케일하고 전체 재그리기 (§10) */
 export function resizeInk(w: number, h: number): void {
   if (!ink) {
     ink = document.createElement('canvas');
+    halo = document.createElement('canvas');
     // willReadFrequently 금지 (§9) — 쓰기만 하므로 GPU 가속 유지
     ictx = ink.getContext('2d')!;
+    hctx = halo.getContext('2d')!;
   }
   if (ink.width === w && ink.height === h) return;
   const ow = ink.width;
@@ -94,19 +103,21 @@ export function resizeInk(w: number, h: number): void {
   }
   ink.width = w;
   ink.height = h;
-  setupCtx();
+  halo!.width = w;
+  halo!.height = h;
   redrawInk();
 }
 
 /** 중점 이차 베지어 증분 — pts[i]가 추가됐을 때 마지막 한 조각만 그린다 (§7) */
-function drawSegment(ctx: CanvasRenderingContext2D, s: Stroke, i: number): void {
+function drawSegment(ctx: CanvasRenderingContext2D, s: Stroke, i: number, asHalo: boolean): void {
   const pts = s.pts;
-  ctx.strokeStyle = s.color;
+  ctx.strokeStyle = asHalo ? haloColor(s.color) : s.color;
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
+  const extra = asHalo ? HALO_EXTRA : 0;
   if (i === 1) {
     // 두 점: 직선 (첫 조각)
-    ctx.lineWidth = pts[1].w;
+    ctx.lineWidth = pts[1].w + extra;
     ctx.beginPath();
     ctx.moveTo(pts[0].x, pts[0].y);
     ctx.lineTo((pts[0].x + pts[1].x) / 2, (pts[0].y + pts[1].y) / 2);
@@ -118,48 +129,62 @@ function drawSegment(ctx: CanvasRenderingContext2D, s: Stroke, i: number): void 
   const p2 = pts[i];
   const m0 = { x: (p0.x + p1.x) / 2, y: (p0.y + p1.y) / 2 };
   const m1 = { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 };
-  ctx.lineWidth = p1.w;
+  ctx.lineWidth = p1.w + extra;
   ctx.beginPath();
   ctx.moveTo(m0.x, m0.y);
   ctx.quadraticCurveTo(p1.x, p1.y, m1.x, m1.y);
   ctx.stroke();
 }
 
-function drawDot(ctx: CanvasRenderingContext2D, s: Stroke): void {
+function drawDot(ctx: CanvasRenderingContext2D, s: Stroke, asHalo: boolean): void {
   const p = s.pts[0];
-  ctx.fillStyle = s.color;
+  ctx.fillStyle = asHalo ? haloColor(s.color) : s.color;
   ctx.beginPath();
-  ctx.arc(p.x, p.y, p.w / 2, 0, Math.PI * 2);
+  ctx.arc(p.x, p.y, (p.w + (asHalo ? HALO_EXTRA : 0)) / 2, 0, Math.PI * 2);
   ctx.fill();
 }
 
-function drawWholeStroke(ctx: CanvasRenderingContext2D, s: Stroke): void {
+function drawWholeStroke(ctx: CanvasRenderingContext2D, s: Stroke, asHalo: boolean): void {
   if (s.pts.length === 0) return;
   if (s.pts.length === 1) {
-    drawDot(ctx, s);
+    drawDot(ctx, s, asHalo);
     return;
   }
-  for (let i = 1; i < s.pts.length; i++) drawSegment(ctx, s, i);
+  for (let i = 1; i < s.pts.length; i++) drawSegment(ctx, s, i, asHalo);
+}
+
+/** ink(색)와 halo(외곽) 두 레이어에 같은 조각을 그린다 */
+function inkSegment(s: Stroke, i: number): void {
+  if (hctx) drawSegment(hctx, s, i, true);
+  if (ictx) drawSegment(ictx, s, i, false);
 }
 
 /** 전체 재그리기 — undo/clear/리사이즈에서만 (§7) */
 export function redrawInk(): void {
-  if (!ink || !ictx) return;
+  if (!ink || !ictx || !halo || !hctx) return;
   ictx.clearRect(0, 0, ink.width, ink.height);
-  for (const s of strokes) drawWholeStroke(ictx, s);
+  hctx.clearRect(0, 0, halo.width, halo.height);
+  for (const s of strokes) {
+    drawWholeStroke(hctx, s, true);
+    drawWholeStroke(ictx, s, false);
+  }
 }
 
 function commitPending(pen: Pen): void {
-  if (!pen.stroke || !ictx) return;
+  if (!pen.stroke || !ictx || !hctx) return;
   pen.pendingSince = -1;
-  drawWholeStroke(ictx, pen.stroke);
+  drawWholeStroke(hctx, pen.stroke, true);
+  drawWholeStroke(ictx, pen.stroke, false);
   pen.inked = pen.stroke.pts.length;
   strokes.push(pen.stroke);
 }
 
 function endStroke(pen: Pen): void {
   if (pen.stroke && pen.pendingSince >= 0) commitPending(pen); // 짧은 획도 확정
-  if (pen.stroke && pen.stroke.pts.length === 1 && ictx) drawDot(ictx, pen.stroke);
+  if (pen.stroke && pen.stroke.pts.length === 1 && ictx && hctx) {
+    drawDot(hctx, pen.stroke, true);
+    drawDot(ictx, pen.stroke, false);
+  }
   pen.drawing = false;
   pen.stroke = null;
   pen.pendingSince = -1;
@@ -240,10 +265,10 @@ export function updateAirdraw(
       // 버퍼 만료 → ink 커밋 시작
       if (nowMs - pen.pendingSince > AIRDRAW.bufferMs) commitPending(pen);
     } else if (ictx) {
-      // 커밋된 획 — 새 점만 증분 드로우
+      // 커밋된 획 — 새 점만 증분 드로우 (헤일로 + 색 두 레이어)
       while (pen.inked < pen.stroke.pts.length) {
         pen.inked++;
-        if (pen.inked >= 2) drawSegment(ictx, pen.stroke, pen.inked - 1);
+        if (pen.inked >= 2) inkSegment(pen.stroke, pen.inked - 1);
       }
     }
   }
@@ -256,11 +281,17 @@ export function updateAirdraw(
   trimIfNeeded();
 }
 
-/** 매 프레임 합성 — ink 한 번 + 아직 버퍼 중인 획은 벡터로 (§2, §7) */
+/** 매 프레임 합성 — 헤일로 → 잉크 순서로, 버퍼 중인 획은 벡터로 (§2, §7) */
 export function compositeInk(ctx: CanvasRenderingContext2D): void {
-  if (ink && (strokes.length > 0 || hasPending())) ctx.drawImage(ink, 0, 0);
+  if (ink && halo && (strokes.length > 0 || hasPending())) {
+    ctx.drawImage(halo, 0, 0);
+    ctx.drawImage(ink, 0, 0);
+  }
   for (const pen of pens.values()) {
-    if (pen.drawing && pen.pendingSince >= 0 && pen.stroke) drawWholeStroke(ctx, pen.stroke);
+    if (pen.drawing && pen.pendingSince >= 0 && pen.stroke) {
+      drawWholeStroke(ctx, pen.stroke, true);
+      drawWholeStroke(ctx, pen.stroke, false);
+    }
   }
 }
 
