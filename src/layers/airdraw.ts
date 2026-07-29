@@ -305,6 +305,11 @@ export function isPenDown(handedness: string): boolean {
   return pens.get(handedness)?.drawing ?? false;
 }
 
+/** 지울 낙서가 있는지 — 지우개 흔들기 단계 판정용 */
+export function hasStrokes(): boolean {
+  return strokes.length > 0 || hasPending();
+}
+
 // ── A4에서 툴바에 연결될 조작들 ──────────────
 export function undoStroke(): void {
   const s = strokes.pop();

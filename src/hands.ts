@@ -21,12 +21,8 @@ export interface HandPoint {
   pinching: boolean;
   /** 손바닥 펴짐 (지우개 흔들기 제스처 판정용) */
   open: boolean;
-  /** 주먹 쥠 (전체 리셋 제스처) */
+  /** 주먹 쥠 — 핀치 오인 방지용 (주먹 시 엄지-검지가 가까워짐) */
   fist: boolean;
-  /** 주먹 유지 진행도 0..1 — 마커 진행 링 표시용 */
-  fistProgress: number;
-  /** 손바닥 중심 (중지 MCP 9) — 진행 링 위치 */
-  palm: { x: number; y: number };
   /** 핀치 중점 — 프레임 모서리/펜 촉으로 사용 */
   x: number;
   y: number;
@@ -89,22 +85,6 @@ export function consumeWipe(): boolean {
   return t;
 }
 
-// 주먹 유지 제스처 — "양손" 주먹을 동시에 FIST_HOLD_MS 이상 쥐면 전체 리셋.
-// 한 손 주먹은 일상 습관과 겹쳐 오발동이 잦아 양손 동시로만 발동한다.
-// 유지하는 동안 양손에 진행 링이 차오르고, 도중에 한쪽이라도 펴면 취소.
-const FIST_HOLD_MS = 1000;
-const FIST_COOLDOWN_MS = 2000;
-
-let bothFistSince: number | null = null;
-let fistTriggered = false;
-let fistCooldownUntil = 0;
-
-/** 주먹 리셋 발동 여부 — 읽으면 소비된다 (1회성) */
-export function consumeFist(): boolean {
-  const t = fistTriggered;
-  fistTriggered = false;
-  return t;
-}
 
 export function handsState(): HandsState {
   return state;
@@ -154,9 +134,7 @@ export function disableHands(): void {
   lastDetectMs = 0;
   pinchSM.clear();
   waveSM.clear();
-  bothFistSince = null;
   wipeTriggered = false;
-  fistTriggered = false;
   info = { hands: 0, pinching: 0, points: [], corners: null };
 }
 
@@ -277,27 +255,9 @@ export function updateHands(video: HTMLVideoElement, nowMs: number): void {
       pinching: sm.down,
       open,
       fist,
-      fistProgress: 0, // 아래에서 양손 주먹일 때만 채워진다
-      palm: { x: lm[9].x, y: lm[9].y },
       x: (thumb.x + index.x) / 2,
       y: (thumb.y + index.y) / 2,
     });
-  }
-
-  // 양손 주먹 동시 유지 → 전체 리셋 (진행 링으로 피드백, 한쪽이라도 펴면 취소)
-  const fistHands = points.filter((p) => p.fist);
-  if (fistHands.length >= 2 && nowMs > fistCooldownUntil) {
-    if (bothFistSince === null) bothFistSince = nowMs;
-    const progress = Math.min(1, (nowMs - bothFistSince) / FIST_HOLD_MS);
-    if (progress >= 1) {
-      fistTriggered = true;
-      fistCooldownUntil = nowMs + FIST_COOLDOWN_MS;
-      bothFistSince = null;
-    } else {
-      for (const p of fistHands) p.fistProgress = progress;
-    }
-  } else {
-    bothFistSince = null;
   }
 
   // 이번 검출에서 안 보인 손의 상태 머신은 리셋 (다음 등장 시 새로 시작)

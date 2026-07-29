@@ -23,7 +23,6 @@ import {
   handsState,
   handsInfo,
   consumeWipe,
-  consumeFist,
 } from './hands.ts';
 import { coverRect, toCanvas, midpoint } from './core/coords.ts';
 import {
@@ -32,6 +31,7 @@ import {
   resizeInk,
   isPenDown,
   clearStrokes,
+  hasStrokes,
   airdrawDebug,
 } from './layers/airdraw.ts';
 
@@ -301,25 +301,8 @@ function drawHandMarkers(): void {
   displayCtx.lineWidth = Math.max(2, w / 500);
 
   for (const p of info.points) {
-    // 주먹: 손가락 원 대신 손바닥 위 진행 링 (다 차면 전체 리셋)
-    if (p.fist) {
-      if (p.fistProgress > 0) {
-        const c = toCanvas(p.palm, rect, cam.mirror);
-        const rr = Math.max(14, w * 0.03);
-        displayCtx.save();
-        displayCtx.lineWidth = Math.max(3, w / 400);
-        displayCtx.strokeStyle = 'rgba(255,255,255,0.35)';
-        displayCtx.beginPath();
-        displayCtx.arc(c.x, c.y, rr, 0, Math.PI * 2);
-        displayCtx.stroke();
-        displayCtx.strokeStyle = '#ffffff';
-        displayCtx.beginPath();
-        displayCtx.arc(c.x, c.y, rr, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * p.fistProgress);
-        displayCtx.stroke();
-        displayCtx.restore();
-      }
-      continue;
-    }
+    // 주먹: 제스처 없음 — 마커도 표시하지 않는다 (핀치 오인 방지용 상태만 유지)
+    if (p.fist) continue;
 
     const thumb = toCanvas(p.thumb, rect, cam.mirror);
     const index = toCanvas(p.index, rect, cam.mirror);
@@ -376,12 +359,7 @@ function loop(nowMs: number): void {
   const camReady = cam !== null && cam.video.readyState >= 2;
   if (camReady) {
     updateHands(cam!.video, nowMs);
-    if (consumeFist()) wipeAll(nowMs); // 주먹 1초 유지 = 전체 리셋
-    if (consumeWipe()) {
-      // 손바닥 펴고 흔들기 = 낙서만 지우기
-      clearStrokes();
-      wipeFlashUntil = nowMs + 200;
-    }
+    if (consumeWipe()) wipeStep(nowMs); // 손바닥 흔들기 = 레이어 한 겹씩 삭제
     updateFrames(nowMs);
   }
 
@@ -473,15 +451,24 @@ function snapshot(): void {
   }, 'image/png');
 }
 
-/** 지우개 흔들기 제스처: 낙서 + 이펙트 프레임 전부 초기화 (새로고침 없이) */
-function wipeAll(nowMs: number): void {
-  frames.length = 0;
-  drawing = null;
-  clearStrokes();
-  releaseUnused();
-  cursor = 0;
-  ui.setFxLabel(`NEXT ${nextEffect().name}`);
-  wipeFlashUntil = nowMs + 280;
+/**
+ * 지우개 흔들기 제스처: 레이어를 위에서부터 한 겹씩 삭제.
+ * 낙서가 있으면 낙서 먼저 → 다시 흔들면 이펙트 프레임.
+ * 낙서 없이 프레임만 있으면 바로 프레임 삭제.
+ */
+function wipeStep(nowMs: number): void {
+  if (hasStrokes()) {
+    clearStrokes();
+  } else if (frames.length > 0 || drawing !== null) {
+    frames.length = 0;
+    drawing = null;
+    releaseUnused();
+    cursor = 0;
+    ui.setFxLabel(`NEXT ${nextEffect().name}`);
+  } else {
+    return; // 지울 게 없으면 플래시도 생략
+  }
+  wipeFlashUntil = nowMs + 220;
 }
 
 /** 캔버스 탭: 프레임이 있으면 마지막 프레임 제거(undo), 없으면 다음 이펙트 예약 변경 */
