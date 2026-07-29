@@ -89,12 +89,13 @@ export function consumeWipe(): boolean {
   return t;
 }
 
-// 주먹 유지 제스처 — 주먹을 FIST_HOLD_MS 이상 쥐고 있으면 전체 리셋.
-// 유지하는 동안 진행 링이 차오르고, 도중에 펴면 취소된다.
+// 주먹 유지 제스처 — "양손" 주먹을 동시에 FIST_HOLD_MS 이상 쥐면 전체 리셋.
+// 한 손 주먹은 일상 습관과 겹쳐 오발동이 잦아 양손 동시로만 발동한다.
+// 유지하는 동안 양손에 진행 링이 차오르고, 도중에 한쪽이라도 펴면 취소.
 const FIST_HOLD_MS = 1000;
 const FIST_COOLDOWN_MS = 2000;
 
-const fistSince = new Map<string, number>();
+let bothFistSince: number | null = null;
 let fistTriggered = false;
 let fistCooldownUntil = 0;
 
@@ -153,7 +154,7 @@ export function disableHands(): void {
   lastDetectMs = 0;
   pinchSM.clear();
   waveSM.clear();
-  fistSince.clear();
+  bothFistSince = null;
   wipeTriggered = false;
   fistTriggered = false;
   info = { hands: 0, pinching: 0, points: [], corners: null };
@@ -267,21 +268,6 @@ export function updateHands(video: HTMLVideoElement, nowMs: number): void {
       wave.reversals = [];
     }
 
-    // 주먹 유지 → 전체 리셋 (진행 링으로 피드백, 도중에 펴면 취소)
-    let fistProgress = 0;
-    if (fist && nowMs > fistCooldownUntil) {
-      if (!fistSince.has(handedness)) fistSince.set(handedness, nowMs);
-      fistProgress = Math.min(1, (nowMs - fistSince.get(handedness)!) / FIST_HOLD_MS);
-      if (fistProgress >= 1) {
-        fistTriggered = true;
-        fistCooldownUntil = nowMs + FIST_COOLDOWN_MS;
-        fistSince.delete(handedness);
-        fistProgress = 0;
-      }
-    } else {
-      fistSince.delete(handedness);
-    }
-
     points.push({
       handedness,
       thumb: { x: thumb.x, y: thumb.y },
@@ -291,11 +277,27 @@ export function updateHands(video: HTMLVideoElement, nowMs: number): void {
       pinching: sm.down,
       open,
       fist,
-      fistProgress,
+      fistProgress: 0, // 아래에서 양손 주먹일 때만 채워진다
       palm: { x: lm[9].x, y: lm[9].y },
       x: (thumb.x + index.x) / 2,
       y: (thumb.y + index.y) / 2,
     });
+  }
+
+  // 양손 주먹 동시 유지 → 전체 리셋 (진행 링으로 피드백, 한쪽이라도 펴면 취소)
+  const fistHands = points.filter((p) => p.fist);
+  if (fistHands.length >= 2 && nowMs > fistCooldownUntil) {
+    if (bothFistSince === null) bothFistSince = nowMs;
+    const progress = Math.min(1, (nowMs - bothFistSince) / FIST_HOLD_MS);
+    if (progress >= 1) {
+      fistTriggered = true;
+      fistCooldownUntil = nowMs + FIST_COOLDOWN_MS;
+      bothFistSince = null;
+    } else {
+      for (const p of fistHands) p.fistProgress = progress;
+    }
+  } else {
+    bothFistSince = null;
   }
 
   // 이번 검출에서 안 보인 손의 상태 머신은 리셋 (다음 등장 시 새로 시작)
@@ -304,9 +306,6 @@ export function updateHands(video: HTMLVideoElement, nowMs: number): void {
   }
   for (const key of [...waveSM.keys()]) {
     if (!seen.has(key)) waveSM.delete(key);
-  }
-  for (const key of [...fistSince.keys()]) {
-    if (!seen.has(key)) fistSince.delete(key);
   }
 
   const pinchPoints = points.filter((p) => p.pinching);

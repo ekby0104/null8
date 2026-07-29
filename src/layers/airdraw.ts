@@ -16,7 +16,7 @@ import { toCanvas, midpoint, type Rect } from '../core/coords.ts';
 export const AIRDRAW = {
   posSmooth: 0.5, // 위치 EMA 계수 (A3)
   minDist: 1.5, // 이보다 가까운 점은 버림 (px)
-  baseWidth: 6, // 기본 선 두께 (px)
+  baseWidth: 12, // 기본 선 두께 (물리 px — dpr 2 기준 CSS 6px)
   speedRef: 40, // 이 속도에서 두께가 최소 (px/frame, A3)
   thinRatio: 0.55, // 최대 속도에서 줄어드는 두께 비율 (A3)
   widthSmooth: 0.3, // 두께 EMA 계수 (A3)
