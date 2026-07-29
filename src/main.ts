@@ -16,9 +16,23 @@ import { Transport } from './transport.ts';
 import { buildUI, type UI } from './ui.ts';
 import { effects, type Effect, type FrameData } from './effects/index.ts';
 import { createGlContext, type GlContext } from './gl/context.ts';
-import { enableHands, disableHands, updateHands, handsState, handsInfo } from './hands.ts';
+import {
+  enableHands,
+  disableHands,
+  updateHands,
+  handsState,
+  handsInfo,
+  consumeWipe,
+} from './hands.ts';
 import { coverRect, toCanvas, midpoint } from './core/coords.ts';
-import { updateAirdraw, compositeInk, resizeInk, isPenDown, airdrawDebug } from './layers/airdraw.ts';
+import {
+  updateAirdraw,
+  compositeInk,
+  resizeInk,
+  isPenDown,
+  clearStrokes,
+  airdrawDebug,
+} from './layers/airdraw.ts';
 
 const SAMPLE_W = 128; // CPU 이펙트 샘플 해상도 고정 (SPEC §7)
 const DPR_MAX = 2; // devicePixelRatio 상한 (SPEC §7)
@@ -49,6 +63,7 @@ let glCtx: GlContext | null = null; // WebGL2 미지원이면 null → CPU 폴�
 let starting = false;
 let flipping = false;
 let debugHud: HTMLElement | null = null; // ?debug=1 (AIRDRAW §8)
+let wipeFlashUntil = 0; // 지우개 제스처 발동 시 흰색 플래시 종료 시각
 
 // 저해상도 샘플 캔버스 — getImageData는 프레임당 1회 (SPEC §7)
 const sampleCanvas = document.createElement('canvas');
@@ -326,7 +341,8 @@ function updateDebugHud(): void {
   const lines = info.points.map(
     (p) =>
       `${p.handedness.padEnd(6)} ratio ${p.ratio.toFixed(2)} ` +
-      `${p.pinching ? 'PINCH' : '  -  '} ${isPenDown(p.handedness) ? 'DRAW' : ''}`,
+      `${p.pinching ? 'PINCH' : p.open ? 'OPEN ' : '  -  '} ` +
+      `${isPenDown(p.handedness) ? 'DRAW' : ''}`,
   );
   lines.push(`strokes ${d.strokes}  points ${d.points}  hands ${info.hands}`);
   debugHud.textContent = lines.join('\n');
@@ -339,6 +355,7 @@ function loop(nowMs: number): void {
   const camReady = cam !== null && cam.video.readyState >= 2;
   if (camReady) {
     updateHands(cam!.video, nowMs);
+    if (consumeWipe()) wipeAll(nowMs); // 손바닥 펴고 흔들기 = 전체 초기화
     updateFrames(nowMs);
   }
 
@@ -357,6 +374,12 @@ function loop(nowMs: number): void {
     renderFrames(s);
     compositeInk(displayCtx); // 잉크는 이펙트 위, 커서 아래 (AIRDRAW §2)
     drawHandMarkers();
+
+    // 초기화 피드백 — 짧은 흰색 플래시
+    if (nowMs < wipeFlashUntil) {
+      displayCtx.fillStyle = `rgba(255,255,255,${(0.8 * (wipeFlashUntil - nowMs)) / 280})`;
+      displayCtx.fillRect(0, 0, ui.canvas.width, ui.canvas.height);
+    }
     updateDebugHud();
   }
 
@@ -422,6 +445,17 @@ function snapshot(): void {
   ui.canvas.toBlob((blob) => {
     if (blob) download(blob, `null8_${transport.timecode().replaceAll(':', '')}.png`);
   }, 'image/png');
+}
+
+/** 지우개 흔들기 제스처: 낙서 + 이펙트 프레임 전부 초기화 (새로고침 없이) */
+function wipeAll(nowMs: number): void {
+  frames.length = 0;
+  drawing = null;
+  clearStrokes();
+  releaseUnused();
+  cursor = 0;
+  ui.setFxLabel(`NEXT ${nextEffect().name}`);
+  wipeFlashUntil = nowMs + 280;
 }
 
 /** 캔버스 탭: 프레임이 있으면 마지막 프레임 제거(undo), 없으면 다음 이펙트 예약 변경 */

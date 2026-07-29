@@ -19,6 +19,8 @@ export interface HandPoint {
   ratio: number;
   /** 히스테리시스 적용 후 핀치 상태 (AIRDRAW §4.2) */
   pinching: boolean;
+  /** 손바닥 펴짐 (지우개 흔들기 제스처 판정용) */
+  open: boolean;
   /** 핀치 중점 — 프레임 모서리/펜 촉으로 사용 */
   x: number;
   y: number;
@@ -55,6 +57,31 @@ interface PinchSM {
 }
 
 const pinchSM = new Map<string, PinchSM>();
+
+// 지우개 흔들기(wipe) 제스처 — 손바닥을 펴고 좌우로 흔들면 레이어 초기화.
+// 진행 방향 극값에서 MIN_SWING 이상 되돌아오면 1회 반전으로 세고,
+// WINDOW 안에 REVERSALS회 이상이면 발동. 핀치/주먹 상태에서는 무시.
+const WIPE_WINDOW_MS = 1100;
+const WIPE_REVERSALS = 3;
+const WIPE_MIN_SWING = 0.05; // 프레임 폭 대비 최소 스윙 폭
+const WIPE_COOLDOWN_MS = 1500;
+
+interface WaveSM {
+  dir: number; // 현재 이동 방향 (-1/0/+1)
+  extreme: number; // 현재 방향의 극값 x (px)
+  reversals: number[]; // 반전 시각들
+}
+
+const waveSM = new Map<string, WaveSM>();
+let wipeTriggered = false;
+let wipeCooldownUntil = 0;
+
+/** 지우개 제스처 발동 여부 — 읽으면 소비된다 (1회성) */
+export function consumeWipe(): boolean {
+  const t = wipeTriggered;
+  wipeTriggered = false;
+  return t;
+}
 
 export function handsState(): HandsState {
   return state;
@@ -103,6 +130,8 @@ export function disableHands(): void {
   lastVideoTime = -1;
   lastDetectMs = 0;
   pinchSM.clear();
+  waveSM.clear();
+  wipeTriggered = false;
   info = { hands: 0, pinching: 0, points: [], corners: null };
 }
 
@@ -161,6 +190,53 @@ export function updateHands(video: HTMLVideoElement, nowMs: number): void {
       sm.offFrames = 0;
     }
 
+    // 손바닥 펴짐: 네 손가락 끝(8,12,16,20)이 PIP(6,10,14,18)보다
+    // 손목(0)에서 확실히 멀면 펴진 것 — 3개 이상이면 open
+    let extended = 0;
+    for (const [tip, pip] of [
+      [8, 6],
+      [12, 10],
+      [16, 14],
+      [20, 18],
+    ] as const) {
+      if (distPx(lm[0], lm[tip]) > distPx(lm[0], lm[pip]) * 1.15) extended++;
+    }
+    const open = extended >= 3;
+
+    // 지우개 흔들기 감지 — 손바닥 펴고 핀치 아님일 때만
+    let wave = waveSM.get(handedness);
+    if (!wave) {
+      wave = { dir: 0, extreme: lm[9].x * vw, reversals: [] };
+      waveSM.set(handedness, wave);
+    }
+    if (open && !sm.down) {
+      const x = lm[9].x * vw;
+      const delta = x - wave.extreme;
+      if (wave.dir === 0) {
+        if (Math.abs(delta) > WIPE_MIN_SWING * vw) {
+          wave.dir = Math.sign(delta);
+          wave.extreme = x;
+        }
+      } else if (Math.sign(delta) === wave.dir) {
+        wave.extreme = x; // 극값 갱신
+      } else if (Math.abs(delta) > WIPE_MIN_SWING * vw) {
+        // 방향 반전
+        wave.dir = Math.sign(delta);
+        wave.extreme = x;
+        wave.reversals.push(nowMs);
+        wave.reversals = wave.reversals.filter((t) => nowMs - t < WIPE_WINDOW_MS);
+        if (wave.reversals.length >= WIPE_REVERSALS && nowMs > wipeCooldownUntil) {
+          wipeTriggered = true;
+          wipeCooldownUntil = nowMs + WIPE_COOLDOWN_MS;
+          wave.reversals = [];
+        }
+      }
+    } else {
+      wave.dir = 0;
+      wave.extreme = lm[9].x * vw;
+      wave.reversals = [];
+    }
+
     points.push({
       handedness,
       thumb: { x: thumb.x, y: thumb.y },
@@ -168,6 +244,7 @@ export function updateHands(video: HTMLVideoElement, nowMs: number): void {
       threshold: (PINCH_ON * palm) / vw, // 마커 원: 겹침 = 핀치 진입
       ratio,
       pinching: sm.down,
+      open,
       x: (thumb.x + index.x) / 2,
       y: (thumb.y + index.y) / 2,
     });
@@ -176,6 +253,9 @@ export function updateHands(video: HTMLVideoElement, nowMs: number): void {
   // 이번 검출에서 안 보인 손의 상태 머신은 리셋 (다음 등장 시 새로 시작)
   for (const key of [...pinchSM.keys()]) {
     if (!seen.has(key)) pinchSM.delete(key);
+  }
+  for (const key of [...waveSM.keys()]) {
+    if (!seen.has(key)) waveSM.delete(key);
   }
 
   const pinchPoints = points.filter((p) => p.pinching);
