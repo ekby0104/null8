@@ -93,9 +93,24 @@ body {
   text-overflow: ellipsis;
 }
 
-.titlebar .spacer {
-  width: 44px; /* traffic light 폭만큼 — path 중앙 정렬용 */
+/* 한/영 전환 버튼 — traffic light 폭에 맞춰 path 중앙 정렬 유지 */
+.titlebar .lang-btn {
+  appearance: none;
+  width: 44px;
   flex: none;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: #f7f7f7;
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1;
+  padding: 4px 0;
+  cursor: pointer;
+}
+
+.titlebar .lang-btn:active {
+  background: #e4e4e4;
 }
 
 /* ── 스크린 (카메라 뷰) ───────────────────── */

@@ -175,7 +175,7 @@ function commitFrame(f: FxFrame): void {
   }
   frames.push(f);
   releaseUnused();
-  ui.setFxLabel(`NEXT ${nextEffect().name}`);
+  ui.setFxLabel(nextEffect().name, true);
 }
 
 function resizeCanvas(): void {
@@ -464,7 +464,7 @@ function wipeStep(nowMs: number): void {
     drawing = null;
     releaseUnused();
     cursor = 0;
-    ui.setFxLabel(`NEXT ${nextEffect().name}`);
+    ui.setFxLabel(nextEffect().name, true);
   } else {
     return; // 지울 게 없으면 플래시도 생략
   }
@@ -479,7 +479,7 @@ function onCanvasTap(): void {
   } else {
     cursor++;
   }
-  ui.setFxLabel(`NEXT ${nextEffect().name}`);
+  ui.setFxLabel(nextEffect().name, true);
 }
 
 async function start(): Promise<void> {
@@ -529,7 +529,7 @@ function bootstrap(): void {
   glCanvas = document.createElement('canvas');
   glCtx = createGlContext(glCanvas);
 
-  ui.setFxLabel(`NEXT ${nextEffect().name}`);
+  ui.setFxLabel(nextEffect().name, true);
   window.addEventListener('resize', resizeCanvas);
 
   if (new URLSearchParams(location.search).has('debug')) {
