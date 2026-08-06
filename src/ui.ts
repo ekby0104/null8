@@ -116,7 +116,13 @@ export function buildUI(root: HTMLElement, handlers: UIHandlers): UI {
     localStorage.setItem(LANG_KEY, lang);
     applyLang();
   });
-  titlebar.append(traffic, path, langBtn);
+  // 후원 링크 — ︎로 텍스트 프레젠테이션 강제 (모노크롬 유지)
+  const coffeeBtn = el('a', 'coffee-btn', '☕︎');
+  coffeeBtn.href = 'https://buymeacoffee.com/yuemyname';
+  coffeeBtn.target = '_blank';
+  coffeeBtn.rel = 'noopener';
+  coffeeBtn.title = 'buy me a coffee';
+  titlebar.append(traffic, path, coffeeBtn, langBtn);
 
   // ── 스크린 (카메라 뷰) ──
   const viewport = el('div', 'viewport');

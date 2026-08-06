@@ -93,6 +93,23 @@ body {
   text-overflow: ellipsis;
 }
 
+/* 후원 링크 — 버튼과 같은 톤의 소형 칩 */
+.titlebar .coffee-btn {
+  flex: none;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: #f7f7f7;
+  color: var(--ink);
+  font-size: 12px;
+  line-height: 1;
+  padding: 3px 7px;
+  text-decoration: none;
+}
+
+.titlebar .coffee-btn:active {
+  background: #e4e4e4;
+}
+
 /* 한/영 전환 버튼 — traffic light 폭에 맞춰 path 중앙 정렬 유지 */
 .titlebar .lang-btn {
   appearance: none;

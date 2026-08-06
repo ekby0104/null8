@@ -64,3 +64,8 @@ npm run build      # dist/ 정적 빌드
 GitHub Pages(`gh-pages` 브랜치)로 올립니다.
 
 전체 명세와 마일스톤은 [SPEC.md](./SPEC.md) 참조.
+
+## 후원
+
+이 프로젝트가 마음에 들었다면 ☕
+**[buymeacoffee.com/yuemyname](https://buymeacoffee.com/yuemyname)**
