@@ -116,8 +116,8 @@ export function buildUI(root: HTMLElement, handlers: UIHandlers): UI {
     localStorage.setItem(LANG_KEY, lang);
     applyLang();
   });
-  // 후원 링크 — ︎로 텍스트 프레젠테이션 강제 (모노크롬 유지)
-  const coffeeBtn = el('a', 'coffee-btn', '☕︎');
+  // 후원 링크 — 컬러 이모지 + 라벨 (유일하게 컬러를 허용하는 예외)
+  const coffeeBtn = el('a', 'coffee-btn', '☕️ COFFEE');
   coffeeBtn.href = 'https://buymeacoffee.com/yuemyname';
   coffeeBtn.target = '_blank';
   coffeeBtn.rel = 'noopener';
