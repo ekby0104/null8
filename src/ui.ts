@@ -118,7 +118,7 @@ export function buildUI(root: HTMLElement, handlers: UIHandlers): UI {
   });
   // 후원 링크 — 컬러 이모지 + 라벨 (유일하게 컬러를 허용하는 예외)
   const coffeeBtn = el('a', 'coffee-btn', '☕️ COFFEE');
-  coffeeBtn.href = 'https://buymeacoffee.com/yuemyname';
+  coffeeBtn.href = 'https://ko-fi.com/L4U224X239';
   coffeeBtn.target = '_blank';
   coffeeBtn.rel = 'noopener';
   coffeeBtn.title = 'buy me a coffee';

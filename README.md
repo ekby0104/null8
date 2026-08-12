@@ -68,4 +68,5 @@ GitHub Pages(`gh-pages` 브랜치)로 올립니다.
 ## 후원
 
 이 프로젝트가 마음에 들었다면 ☕
-**[buymeacoffee.com/yuemyname](https://buymeacoffee.com/yuemyname)**
+
+<a href='https://ko-fi.com/L4U224X239' target='_blank'><img height='36' style='border:0px;height:36px;' src='https://storage.ko-fi.com/cdn/kofi3.png?v=6' border='0' alt='Buy Me a Coffee at ko-fi.com' /></a>
